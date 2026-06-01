@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Window
+    x:Class="LenovoTray.UI.DashboardWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <Window.SystemBackdrop>
+        <MicaBackdrop Kind="BaseAlt" />
+    </Window.SystemBackdrop>
+
+    <!-- No fixed Width: the grid fills the window, which is sized in code per monitor DPI. -->
+    <Grid Padding="20,16,20,20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <TextBlock Grid.Row="0"
+                   Text="Lenovo Power"
+                   FontSize="13"
+                   FontWeight="SemiBold"
+                   Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                   Margin="0,0,0,14"/>
+
+        <!-- Battery gauge section: gauge left, stats right filling remaining width -->
+        <Grid Grid.Row="1" Margin="0,0,0,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Circular arc gauge -->
+            <Grid Grid.Column="0" Width="100" Height="100" Margin="0,0,16,0">
+                <!-- Background arc (track) -->
+                <Canvas Width="100" Height="100">
+                    <Path x:Name="GaugeTrack"
+                          Stroke="{ThemeResource ControlStrokeColorDefaultBrush}"
+                          StrokeThickness="8"
+                          StrokeStartLineCap="Round"
+                          StrokeEndLineCap="Round"
+                          Canvas.Left="0" Canvas.Top="0"/>
+                    <Path x:Name="GaugeFill"
+                          Stroke="#E2001A"
+                          StrokeThickness="8"
+                          StrokeStartLineCap="Round"
+                          StrokeEndLineCap="Round"
+                          Canvas.Left="0" Canvas.Top="0"/>
+                </Canvas>
+                <!-- Percentage text in center -->
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <TextBlock x:Name="BatteryPercentText"
+                               Text="--"
+                               FontSize="24"
+                               FontWeight="Bold"
+                               HorizontalAlignment="Center"
+                               Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
+                    <TextBlock x:Name="ChargeStatusText"
+                               Text="Loading"
+                               FontSize="10"
+                               HorizontalAlignment="Center"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                </StackPanel>
+            </Grid>
+
+            <!-- Right side stats -->
+            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="6">
+                <StackPanel Spacing="2">
+                    <TextBlock Text="POWER"
+                               FontSize="10"
+                               FontWeight="SemiBold"
+                               Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                               CharacterSpacing="100"/>
+                    <TextBlock x:Name="PowerSourceText"
+                               Text="—"
+                               FontSize="13"
+                               Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
+                </StackPanel>
+                <StackPanel Spacing="2">
+                    <TextBlock Text="RATE"
+                               FontSize="10"
+                               FontWeight="SemiBold"
+                               Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                               CharacterSpacing="100"/>
+                    <TextBlock x:Name="PowerRateText"
+                               Text="—"
+                               FontSize="13"
+                               Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
+                </StackPanel>
+            </StackPanel>
+        </Grid>
+
+        <!-- Separator -->
+        <Border Grid.Row="2"
+                Height="1"
+                Background="{ThemeResource DividerStrokeColorDefaultBrush}"
+                Margin="0,0,0,12"/>
+
+        <!-- Status badges -->
+        <StackPanel Grid.Row="3" Spacing="8">
+            <!-- Smart Charge badge -->
+            <Border x:Name="SmartChargeBadge"
+                    CornerRadius="6"
+                    Padding="10,8">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" Spacing="1">
+                        <TextBlock Text="Smart Charge"
+                                   FontSize="12"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
+                        <TextBlock x:Name="SmartChargeDetailText"
+                                   Text="—"
+                                   FontSize="11"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    </StackPanel>
+                    <Border Grid.Column="1"
+                            x:Name="SmartChargeIndicator"
+                            Width="8" Height="8"
+                            CornerRadius="4"
+                            VerticalAlignment="Center"/>
+                </Grid>
+            </Border>
+
+            <!-- Smart Standby badge -->
+            <Border x:Name="SmartStandbyBadge"
+                    CornerRadius="6"
+                    Padding="10,8">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" Spacing="1">
+                        <TextBlock Text="Smart Standby"
+                                   FontSize="12"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
+                        <TextBlock x:Name="SmartStandbyDetailText"
+                                   Text="—"
+                                   FontSize="11"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    </StackPanel>
+                    <Border Grid.Column="1"
+                            x:Name="SmartStandbyIndicator"
+                            Width="8" Height="8"
+                            CornerRadius="4"
+                            VerticalAlignment="Center"/>
+                </Grid>
+            </Border>
+        </StackPanel>
+    </Grid>
+</Window>

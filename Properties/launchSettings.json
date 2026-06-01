@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "LenovoTray (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "LenovoTray (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
