@@ -103,7 +103,7 @@ version string if you want to build without pushing a tag.
 ### Manual release
 
 1. `build-installer.ps1 -Version X.Y.Z`.
-2. Create a GitHub Release tagged `vX.Y.Z` on `ezpl/LenovoPowerTray` and attach
+2. Create a GitHub Release tagged `vX.Y.Z` on `0z00z0/LenovoPowerTray` and attach
    `LenovoPowerTray-Setup.exe`.
 3. Update `winget/` manifests: bump `PackageVersion`, set the `InstallerUrl` to the new asset, and
    set `InstallerSha256` to the value the build script printed.

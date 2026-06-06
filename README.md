@@ -28,7 +28,7 @@ winget install ezpl.LenovoPowerTray
 winget upgrade ezpl.LenovoPowerTray   # update later
 ```
 
-Or grab `LenovoPowerTray-Setup.exe` from the [latest release](https://github.com/ezpl/LenovoPowerTray/releases)
+Or grab `LenovoPowerTray-Setup.exe` from the [latest release](https://github.com/0z00z0/LenovoPowerTray/releases)
 and run it. The installer is **per-user — no admin needed to install** — and offers two options:
 
 - **Run at startup** — auto-starts the app at sign-in. Ticking it asks for elevation once, to

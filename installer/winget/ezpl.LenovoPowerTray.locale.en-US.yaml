@@ -4,11 +4,11 @@ PackageVersion: 1.0.0
 PackageLocale: en-US
 Publisher: Zero Zero Software
 PublisherUrl: https://0z0.xyz
-PublisherSupportUrl: https://github.com/ezpl/LenovoPowerTray/issues
+PublisherSupportUrl: https://github.com/0z00z0/LenovoPowerTray/issues
 PackageName: Lenovo Power Tray
-PackageUrl: https://github.com/ezpl/LenovoPowerTray
+PackageUrl: https://github.com/0z00z0/LenovoPowerTray
 License: MIT
-LicenseUrl: https://github.com/ezpl/LenovoPowerTray/blob/main/LICENSE
+LicenseUrl: https://github.com/0z00z0/LenovoPowerTray/blob/main/LICENSE
 ShortDescription: System-tray app for ThinkPad Smart Charge and Smart Standby.
 Description: >-
   A lightweight Windows system-tray app for Lenovo ThinkPad laptops that toggles

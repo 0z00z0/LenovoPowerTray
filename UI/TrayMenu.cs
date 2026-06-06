@@ -59,7 +59,7 @@ internal sealed class TrayMenu
             Text    = $"⬆ Update available: v{version}",
             Command = new RelayCommand(() =>
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
-                    "https://github.com/ezpl/LenovoPowerTray/releases/latest")
+                    "https://github.com/0z00z0/LenovoPowerTray/releases/latest")
                 { UseShellExecute = true })),
         };
 

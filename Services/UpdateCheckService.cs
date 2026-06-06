@@ -27,7 +27,7 @@ internal static class UpdateCheckService
         {
             using var request = new HttpRequestMessage(
                 HttpMethod.Get,
-                "https://api.github.com/repos/ezpl/LenovoPowerTray/releases/latest");
+                "https://api.github.com/repos/0z00z0/LenovoPowerTray/releases/latest");
 
             request.Headers.UserAgent.ParseAdd("LenovoPowerTray/1.0");
 
