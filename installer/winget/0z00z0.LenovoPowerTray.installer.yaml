@@ -2,7 +2,7 @@
 #
 # Installer manifest. Per release: bump PackageVersion, set InstallerUrl to the GitHub
 # Release asset, and fill InstallerSha256 (build-installer.ps1 prints the SHA256).
-PackageIdentifier: ezpl.LenovoPowerTray
+PackageIdentifier: 0z00z0.LenovoPowerTray
 PackageVersion: 1.0.0
 InstallerType: inno
 Scope: user

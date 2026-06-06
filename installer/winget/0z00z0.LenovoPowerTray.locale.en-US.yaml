@@ -1,5 +1,5 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
-PackageIdentifier: ezpl.LenovoPowerTray
+PackageIdentifier: 0z00z0.LenovoPowerTray
 PackageVersion: 1.0.0
 PackageLocale: en-US
 Publisher: Zero Zero Software

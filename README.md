@@ -24,8 +24,8 @@ option. The tray icon itself shows a live battery-level arc, colour-coded green/
 **winget** (recommended):
 
 ```powershell
-winget install ezpl.LenovoPowerTray
-winget upgrade ezpl.LenovoPowerTray   # update later
+winget install 0z00z0.LenovoPowerTray
+winget upgrade 0z00z0.LenovoPowerTray   # update later
 ```
 
 Or grab `LenovoPowerTray-Setup.exe` from the [latest release](https://github.com/0z00z0/LenovoPowerTray/releases)

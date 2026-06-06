@@ -155,9 +155,9 @@ jobs:
           $sha256 = '${{ steps.sha256.outputs.sha256 }}'
           $tag    = "v$ver"
 
-          $installerYaml = 'installer\winget\ezpl.LenovoPowerTray.installer.yaml'
-          $versionYaml   = 'installer\winget\ezpl.LenovoPowerTray.yaml'
-          $localeYaml    = 'installer\winget\ezpl.LenovoPowerTray.locale.en-US.yaml'
+          $installerYaml = 'installer\winget\0z00z0.LenovoPowerTray.installer.yaml'
+          $versionYaml   = 'installer\winget\0z00z0.LenovoPowerTray.yaml'
+          $localeYaml    = 'installer\winget\0z00z0.LenovoPowerTray.locale.en-US.yaml'
 
           # Helper: replace a YAML scalar in-place
           function Set-YamlValue {
@@ -213,16 +213,16 @@ jobs:
           prerelease: false
           files: |
             installer/Output/LenovoPowerTray-Setup.exe
-            installer/winget/ezpl.LenovoPowerTray.installer.yaml
-            installer/winget/ezpl.LenovoPowerTray.yaml
-            installer/winget/ezpl.LenovoPowerTray.locale.en-US.yaml
+            installer/winget/0z00z0.LenovoPowerTray.installer.yaml
+            installer/winget/0z00z0.LenovoPowerTray.yaml
+            installer/winget/0z00z0.LenovoPowerTray.locale.en-US.yaml
           body: |
             ## Lenovo Power Tray v${{ steps.version.outputs.version }}
 
             **Install / upgrade via winget:**
             ```
-            winget install ezpl.LenovoPowerTray
-            winget upgrade ezpl.LenovoPowerTray
+            winget install 0z00z0.LenovoPowerTray
+            winget upgrade 0z00z0.LenovoPowerTray
             ```
 
             Or download `LenovoPowerTray-Setup.exe` below — per-user installer, no admin required.
@@ -248,9 +248,9 @@ jobs:
           New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 
           $assets = @(
-            'ezpl.LenovoPowerTray.installer.yaml',
-            'ezpl.LenovoPowerTray.yaml',
-            'ezpl.LenovoPowerTray.locale.en-US.yaml'
+            '0z00z0.LenovoPowerTray.installer.yaml',
+            '0z00z0.LenovoPowerTray.yaml',
+            '0z00z0.LenovoPowerTray.locale.en-US.yaml'
           )
           foreach ($a in $assets) {
             gh release download $tag --repo ${{ github.repository }} --pattern $a --dir $outDir

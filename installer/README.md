@@ -37,7 +37,7 @@ The script prints the installer's **SHA256** — paste it into the winget manife
   app's "Launch at startup" tray toggle manages.)
 - Optional **"Auto update in background"** checkbox: creates a **non-elevated** logon task
   (`LenovoTray AutoUpdate`, runs 5 min after sign-in) that runs
-  `winget upgrade --id ezpl.LenovoPowerTray --silent`. Creating it needs **no admin** (no UAC).
+  `winget upgrade --id 0z00z0.LenovoPowerTray --silent`. Creating it needs **no admin** (no UAC).
   - This only finds updates once the package is reachable from a **winget source** — i.e. submitted
     to the public `microsoft/winget-pkgs`, or a [local source](#winget) the machine has configured.
     Until then the task runs harmlessly and finds nothing.
@@ -113,15 +113,15 @@ version string if you want to build without pushing a tag.
 End users:
 
 ```powershell
-winget install ezpl.LenovoPowerTray     # first install (per-user, silent, no admin)
-winget upgrade ezpl.LenovoPowerTray      # update to a newer published version
+winget install 0z00z0.LenovoPowerTray     # first install (per-user, silent, no admin)
+winget upgrade 0z00z0.LenovoPowerTray      # update to a newer published version
 ```
 
 > winget has **no background auto-updater** — updates happen when the user runs `winget upgrade`.
 > This is the intended trade-off for keeping the app and installer simple.
 
 ### Manifests (`winget/`)
-Three files target `ezpl.LenovoPowerTray`: `*.installer.yaml`, `*.locale.en-US.yaml`, and the version
+Three files target `0z00z0.LenovoPowerTray`: `*.installer.yaml`, `*.locale.en-US.yaml`, and the version
 manifest. Validate / test locally before publishing:
 
 ```powershell
@@ -134,7 +134,7 @@ Regenerating from a release with **wingetcreate** is convenient:
 
 ```powershell
 winget install Microsoft.WingetCreate
-wingetcreate update ezpl.LenovoPowerTray --version X.Y.Z --urls <Setup.exe URL> --out installer\winget
+wingetcreate update 0z00z0.LenovoPowerTray --version X.Y.Z --urls <Setup.exe URL> --out installer\winget
 ```
 
 Submitting to the public `microsoft/winget-pkgs` repo is **optional** — the manifests work with a

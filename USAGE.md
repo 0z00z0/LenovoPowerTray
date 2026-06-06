@@ -60,7 +60,7 @@ Output: `bin\Release\net10.0-windows10.0.26100.0\win-x64\`
 
 ## Installing & updating
 
-End users install via **winget** (`winget install ezpl.LenovoPowerTray`) or by running
+End users install via **winget** (`winget install 0z00z0.LenovoPowerTray`) or by running
 `LenovoPowerTray-Setup.exe` from the GitHub releases. The installer is a **per-user Inno Setup**
 package — it installs to `%LocalAppData%` with **no admin prompt**, adds a Start-menu shortcut, and
 offers two checkboxes: **"Run at startup"** and **"Auto update in background"**. Updates otherwise
@@ -199,7 +199,7 @@ LenovoChargeThreshold/
 ├── installer/                       — Per-user Inno Setup installer + winget manifests
 │   ├── LenovoPowerTray.iss          — Inno script (per-user, optional Run-at-startup task)
 │   ├── build-installer.ps1          — publish + compile → Output\LenovoPowerTray-Setup.exe
-│   └── winget/                      — winget manifests (ezpl.LenovoPowerTray)
+│   └── winget/                      — winget manifests (0z00z0.LenovoPowerTray)
 │
 ├── Features/                        — Toggleable capabilities behind one interface
 │   ├── IToggleFeature.cs            — Name / IsEnabled / SetEnabled abstraction
