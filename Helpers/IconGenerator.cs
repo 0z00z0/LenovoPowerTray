@@ -43,6 +43,22 @@ internal static class IconGenerator
         return icoPath;
     }
 
+    /// <summary>
+    /// Renders a live battery-level tray icon as a 32×32 <see cref="System.Drawing.Icon"/>.
+    /// The caller must call <see cref="NativeMethods.DestroyIcon"/> on the handle of the
+    /// returned icon when it is no longer needed (before replacing it with a new one).
+    /// Returns a generic battery icon when <paramref name="percent"/> is 0.
+    /// </summary>
+    internal static System.Drawing.Icon RenderBatteryIcon(int percent, bool charging)
+    {
+        using var bmp    = RenderBatteryBitmap(32, percent, charging);
+        IntPtr    hIcon  = bmp.GetHicon();
+        // Clone copies the icon data into a managed-owned handle; destroy the GDI original.
+        var icon = (System.Drawing.Icon)System.Drawing.Icon.FromHandle(hIcon).Clone();
+        NativeMethods.DestroyIcon(hIcon);
+        return icon;
+    }
+
     // ── Private rendering ─────────────────────────────────────────────────────
 
     private static Bitmap RenderIconBitmap(int size)
@@ -73,6 +89,78 @@ internal static class IconGenerator
         g.FillRectangle(white, x0, y0 + height - thickness, width, thickness);   // bottom foot
 
         return bmp;
+    }
+
+    /// <summary>
+    /// Renders a 32×32 battery arc icon.
+    /// Arc geometry: 100×100 virtual canvas mapped to <paramref name="size"/> px,
+    /// centre 50/50, radius 38, 7-o'clock start (135°), 270° sweep — same proportions
+    /// as the DashboardWindow gauge so the two visuals feel consistent.
+    /// </summary>
+    private static Bitmap RenderBatteryBitmap(int size, int percent, bool charging)
+    {
+        var bmp = new Bitmap(size, size, PixelFormat.Format32bppArgb);
+        using var g = Graphics.FromImage(bmp);
+        g.SmoothingMode   = SmoothingMode.AntiAlias;
+        g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+        g.Clear(Color.Transparent);
+
+        // Virtual 100×100 canvas → scale to actual icon size.
+        float scale  = size / 100f;
+        float cx     = 50 * scale;
+        float cy     = 50 * scale;
+        float radius = 38 * scale;
+        float stroke = Math.Max(2f, 7f * scale);   // proportional stroke
+
+        // Track (background ring).
+        using var trackPen = new System.Drawing.Pen(Color.FromArgb(60, 200, 200, 200), stroke);
+        trackPen.StartCap = trackPen.EndCap = System.Drawing.Drawing2D.LineCap.Round;
+        DrawArc(g, trackPen, cx, cy, radius, 135f, 270f);
+
+        if (percent > 0)
+        {
+            // Fill colour: green > 50%, orange 21-50%, red ≤ 20%.
+            Color fillColor = percent switch
+            {
+                > 50 => Color.FromArgb(255, 0x10, 0xB9, 0x81),  // green
+                > 20 => Color.FromArgb(255, 0xFF, 0x8C, 0x00),  // orange
+                _    => Color.FromArgb(255, 0xE2, 0x00, 0x1A),  // red
+            };
+            if (charging) fillColor = Color.FromArgb(255, 0x10, 0xB9, 0x81); // always green when charging
+
+            using var fillPen = new System.Drawing.Pen(fillColor, stroke);
+            fillPen.StartCap = fillPen.EndCap = System.Drawing.Drawing2D.LineCap.Round;
+            DrawArc(g, fillPen, cx, cy, radius, 135f, 270f * percent / 100f);
+        }
+
+        // Small % text in the centre (only legible at 32 px and above).
+        if (size >= 24)
+        {
+            string label = percent > 0 ? $"{percent}" : "?";
+            float  fontSize = Math.Max(6f, size * 0.22f);
+            using var font  = new Font("Segoe UI", fontSize, System.Drawing.FontStyle.Bold, GraphicsUnit.Pixel);
+            using var brush = new SolidBrush(Color.FromArgb(220, 255, 255, 255));
+            var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+            g.DrawString(label, font, brush, new RectangleF(0, 0, size, size), sf);
+        }
+
+        return bmp;
+    }
+
+    /// <summary>Draws a circular arc using GDI+ (clock-face angles: 0° = 12 o'clock).</summary>
+    private static void DrawArc(Graphics g, System.Drawing.Pen pen,
+        float cx, float cy, float r, float startDeg, float sweepDeg)
+    {
+        if (sweepDeg <= 0) return;
+        sweepDeg = Math.Min(sweepDeg, 359.9f);
+
+        float left   = cx - r;
+        float top    = cy - r;
+        float diam   = r * 2;
+
+        // GDI+ angles: 0° = 3 o'clock, increases clockwise.
+        // Clock-face: 0° = 12 o'clock → subtract 90°.
+        g.DrawArc(pen, left, top, diam, diam, startDeg - 90f, sweepDeg);
     }
 
     private static GraphicsPath BuildRoundedRectPath(Rectangle bounds, int radius)

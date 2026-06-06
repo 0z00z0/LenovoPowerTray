@@ -38,9 +38,17 @@ dotnet run
 ## Dashboard popup
 Appears bottom-right above the taskbar.  Closes on focus loss.  Refreshes every 5 s.
 
-- Circular arc gauge: charge %, colour-coded green > 50 %, orange ≤ 50 %, red ≤ 20 %  
-- Power source (AC / Battery) and charge/drain rate in watts  
-- Status badges for Smart Charge (with threshold values when active) and Smart Standby
+- Circular arc gauge: charge %, colour-coded green > 50 %, orange ≤ 50 %, red ≤ 20 %
+- Amber tick marks on the arc at the Smart Charge start% and stop% positions (visible when Smart
+  Charge is enabled with valid thresholds)
+- Power source (AC / Battery) and charge/drain rate in watts
+- **Smart Charge badge** — shows current thresholds; expands to reveal Start/Stop sliders when
+  Smart Charge is enabled. Sliders are constrained (≥ 5% gap); **Apply** writes the new thresholds
+  immediately via `LenSetChargeThreshold`
+- **Smart Standby badge** — shows service running state
+
+The tray icon is a live battery-level arc (same colour scheme as the gauge), updated on every
+`Battery.ReportUpdated` event.
 
 ## Building
 
@@ -121,6 +129,20 @@ Get-AuthenticodeSignature .\bin\Release\net10.0-windows10.0.26100.0\win-x64\Leno
 
 ## Smart Charge (battery charge threshold)
 
+### Prerequisite: Lenovo Power Management Driver
+
+Smart Charge requires the **Lenovo Power Management Driver** (Windows service `PWMGR`,
+"Lenovo Power and Battery"). It ships with the ThinkPad hardware driver package and is
+almost certainly already present if the laptop has ever had a full driver installation.
+
+To verify (elevated PowerShell): `Get-Service -Name PWMGR -ErrorAction SilentlyContinue`
+
+If the service is missing, download **"Power Management Driver for Windows 10 and 11
+(64-bit)"** from [Lenovo Support](https://support.lenovo.com/) for your model. Without
+it, Smart Charge shows as **Unavailable** — the rest of the app works fine.
+
+### How Smart Charge works
+
 ThinkPad firmware does **not** expose the battery charge threshold through the
 Lenovo BIOS WMI provider (`Lenovo_BiosSetting`) — that class has no charge-threshold
 key on these machines. The threshold is owned by the **Lenovo Power Manager**, which
@@ -164,7 +186,9 @@ LenovoChargeThreshold/
 │
 ├── Services/                        — All direct hardware / OS interaction
 │   ├── ChargeThresholdService.cs    — Smart Charge read/write via LenPower.dll (Power Manager RPC)
-│   └── StandbyService.cs            — LenovoSmartStandby service start/stop
+│   ├── StandbyService.cs            — LenovoSmartStandby service start/stop
+│   ├── ToastService.cs              — Windows toast notifications (charge complete, AC connected)
+│   └── UpdateCheckService.cs        — GitHub releases API check; notifies if a newer version exists
 │
 ├── native/                          — Native bridge (built separately via build.cmd)
 │   ├── pwrmgr.idl                   — RPC interface definition (MIDL input)
@@ -187,8 +211,8 @@ LenovoChargeThreshold/
 │
 └── Helpers/                         — Infrastructure utilities
     ├── AppColors.cs                 — Shared colour constants and pre-allocated brushes
-    ├── IconGenerator.cs             — Generates LenovoRed.ico at runtime
-    ├── NativeMethods.cs             — Win32 PInvoke (per-monitor work area + DPI)
+    ├── IconGenerator.cs             — Static red-L tray icon (file-based) + live battery arc icon
+    ├── NativeMethods.cs             — Win32 P/Invoke: per-monitor work area + DPI, DestroyIcon
     ├── RelayCommand.cs              — Minimal ICommand for tray click binding
     └── TaskSchedulerHelper.cs       — Auto-start management via Task Scheduler
 ```
@@ -198,11 +222,13 @@ LenovoChargeThreshold/
 - **No public API surface** — all service/feature types are `internal`; the only
   `public` class is `App`, required by the WinUI framework.
 - **Feature abstraction** — the three menu toggles implement `IToggleFeature`
-  (`Name` / `IsEnabled` / `SetEnabled`), so `TrayMenu` builds and refreshes them
-  in a single loop with no per-feature branching.
-- **UI thread safety** — every toggle write runs on a background thread via
-  `Task.Run` (RPC and service calls can block for seconds). The dashboard refresh
-  reads state on the UI thread (quick registry/service queries).
+  (`Name` / `IsAvailable` / `IsEnabled` / `SetEnabled`). `IsAvailable` distinguishes
+  "hardware not capable" from "feature off", so `TrayMenu` can grey out incapable items
+  rather than showing them as unchecked. `SetEnabled` returns `bool` to propagate write
+  failures. `TrayMenu` builds and refreshes all items in a single loop.
+- **UI thread safety** — toggle writes and dashboard badge reads all run on background
+  threads via `Task.Run` (RPC and service calls can block for seconds); results are
+  marshalled back to the UI thread with `DispatcherQueue.TryEnqueue`.
 - **Native interop** — Smart Charge is the one feature that can't be done from
   managed code or WMI; it goes through `LenPower.dll` (see `native/`). The managed
   `ChargeThresholdService` fails soft (`Read()` → `null`) if the bridge or driver

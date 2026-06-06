@@ -51,6 +51,23 @@
                           StrokeStartLineCap="Round"
                           StrokeEndLineCap="Round"
                           Canvas.Left="0" Canvas.Top="0"/>
+                    <!-- Charge threshold tick markers (amber, shown when Smart Charge enabled) -->
+                    <Path x:Name="GaugeStartTick"
+                          Stroke="#D8A657"
+                          StrokeThickness="2.5"
+                          StrokeStartLineCap="Round"
+                          StrokeEndLineCap="Round"
+                          Canvas.Left="0" Canvas.Top="0"
+                          Visibility="Collapsed"
+                          Opacity="0.9"/>
+                    <Path x:Name="GaugeStopTick"
+                          Stroke="#D8A657"
+                          StrokeThickness="2.5"
+                          StrokeStartLineCap="Round"
+                          StrokeEndLineCap="Round"
+                          Canvas.Left="0" Canvas.Top="0"
+                          Visibility="Collapsed"
+                          Opacity="0.9"/>
                 </Canvas>
                 <!-- Percentage text in center -->
                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
@@ -103,31 +120,87 @@
 
         <!-- Status badges -->
         <StackPanel Grid.Row="3" Spacing="8">
+
             <!-- Smart Charge badge -->
             <Border x:Name="SmartChargeBadge"
                     CornerRadius="6"
                     Padding="10,8">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <StackPanel Grid.Column="0" Spacing="1">
-                        <TextBlock Text="Smart Charge"
-                                   FontSize="12"
-                                   FontWeight="SemiBold"
-                                   Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
-                        <TextBlock x:Name="SmartChargeDetailText"
-                                   Text="—"
-                                   FontSize="11"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                <StackPanel Spacing="0">
+                    <!-- Header row: title + indicator dot -->
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" Spacing="1">
+                            <TextBlock Text="Smart Charge"
+                                       FontSize="12"
+                                       FontWeight="SemiBold"
+                                       Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
+                            <TextBlock x:Name="SmartChargeDetailText"
+                                       Text="—"
+                                       FontSize="11"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        </StackPanel>
+                        <Border Grid.Column="1"
+                                x:Name="SmartChargeIndicator"
+                                Width="8" Height="8"
+                                CornerRadius="4"
+                                VerticalAlignment="Center"/>
+                    </Grid>
+
+                    <!-- Threshold sliders — visible when Smart Charge is capable and enabled -->
+                    <StackPanel x:Name="ThresholdSliders"
+                                Spacing="2"
+                                Margin="0,10,0,2"
+                                Visibility="Collapsed">
+                        <!-- Start % -->
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="36"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="34"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Start"
+                                       FontSize="11" VerticalAlignment="Center"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            <Slider Grid.Column="1" x:Name="StartSlider"
+                                    Minimum="5" Maximum="95" StepFrequency="5"
+                                    IsThumbToolTipEnabled="False"
+                                    ValueChanged="OnStartSliderChanged"/>
+                            <TextBlock Grid.Column="2" x:Name="StartValueText"
+                                       FontSize="11" VerticalAlignment="Center"
+                                       HorizontalAlignment="Right"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        </Grid>
+                        <!-- Stop % -->
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="36"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="34"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Stop"
+                                       FontSize="11" VerticalAlignment="Center"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            <Slider Grid.Column="1" x:Name="StopSlider"
+                                    Minimum="10" Maximum="100" StepFrequency="5"
+                                    IsThumbToolTipEnabled="False"
+                                    ValueChanged="OnStopSliderChanged"/>
+                            <TextBlock Grid.Column="2" x:Name="StopValueText"
+                                       FontSize="11" VerticalAlignment="Center"
+                                       HorizontalAlignment="Right"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        </Grid>
+                        <Button x:Name="ApplyThresholdsButton"
+                                Content="Apply"
+                                HorizontalAlignment="Right"
+                                FontSize="11"
+                                Padding="12,3"
+                                Margin="0,4,0,0"
+                                Click="OnApplyThresholds"/>
                     </StackPanel>
-                    <Border Grid.Column="1"
-                            x:Name="SmartChargeIndicator"
-                            Width="8" Height="8"
-                            CornerRadius="4"
-                            VerticalAlignment="Center"/>
-                </Grid>
+                </StackPanel>
             </Border>
 
             <!-- Smart Standby badge -->

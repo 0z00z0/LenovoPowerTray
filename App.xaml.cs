@@ -1,7 +1,10 @@
 using H.NotifyIcon;
 using Microsoft.UI.Xaml;
+using Windows.Devices.Power;
+using Windows.System.Power;
 using LenovoTray.Features;
 using LenovoTray.Helpers;
+using LenovoTray.Services;
 using LenovoTray.UI;
 
 namespace LenovoTray;
@@ -18,12 +21,22 @@ public partial class App : Application
     private DashboardWindow? _dashboard;
     private TrayMenu?        _menu;
 
+    // Last known battery status — used to detect Charging→Idle transitions for toasts.
+    private BatteryStatus _lastBatteryStatus = BatteryStatus.NotPresent;
+
+    // Cached battery percentage for dynamic tray icon; -1 = not yet read.
+    private int  _lastIconPct      = -1;
+    private bool _lastIconCharging = false;
+
     public App() => InitializeComponent();
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
         _hostWindow = new MainWindow();
+        ToastService.Register();
         InitTrayIcon();
+        SubscribeBatteryEvents();
+        ScheduleUpdateCheck();
     }
 
     // ── Tray icon ─────────────────────────────────────────────────────────────
@@ -32,7 +45,7 @@ public partial class App : Application
     {
         _trayIcon = (TaskbarIcon)Resources["TrayIcon"];
 
-        // Generate the red "L" .ico once, then load it from disk.
+        // Start with the static red "L" icon; battery arc replaces it on first battery event.
         var exeDir   = Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
         var iconPath = IconGenerator.GenerateAndSaveTrayIcon(exeDir);
         _trayIcon.Icon = new System.Drawing.Icon(iconPath);
@@ -50,6 +63,101 @@ public partial class App : Application
         _trayIcon.RightClickCommand = new RelayCommand(() => _menu!.RefreshState());
 
         _trayIcon.ForceCreate();
+    }
+
+    // ── Battery monitoring (dynamic icon + toast triggers) ────────────────────
+
+    private void SubscribeBatteryEvents()
+    {
+        Battery.AggregateBattery.ReportUpdated += OnBatteryReportUpdated;
+        // Trigger immediately with the current state so the icon is right from the start.
+        OnBatteryReportUpdated(Battery.AggregateBattery, null!);
+    }
+
+    private void OnBatteryReportUpdated(Battery sender, object args)
+    {
+        try
+        {
+            var report = Battery.AggregateBattery.GetReport();
+
+            // ── Compute percentage ────────────────────────────────────────────
+            int pct = 0;
+            if (report.FullChargeCapacityInMilliwattHours is > 0 and { } full &&
+                report.RemainingCapacityInMilliwattHours  is { } remaining)
+            {
+                pct = Math.Clamp((int)Math.Round(100.0 * remaining / full), 0, 100);
+            }
+
+            bool charging = report.Status is BatteryStatus.Charging or BatteryStatus.Idle;
+
+            // ── Dynamic tray icon ─────────────────────────────────────────────
+            // Only re-render when something meaningful changed (avoids GDI churn every tick).
+            if (pct != _lastIconPct || charging != _lastIconCharging)
+            {
+                _lastIconPct      = pct;
+                _lastIconCharging = charging;
+                UpdateTrayIcon(pct, charging);
+            }
+
+            // ── Toast: charging complete ──────────────────────────────────────
+            // Fire when the battery transitions from Charging → Idle (threshold or full).
+            if (_lastBatteryStatus == BatteryStatus.Charging &&
+                report.Status      == BatteryStatus.Idle)
+            {
+                var state   = ChargeThresholdService.Read();
+                int stopPct = state is { Enabled: true, Stop: > 0 } ? state.Stop : 100;
+                ToastService.NotifyChargeComplete(stopPct);
+            }
+
+            // ── Toast: AC connected ───────────────────────────────────────────
+            if (_lastBatteryStatus == BatteryStatus.Discharging &&
+                report.Status      == BatteryStatus.Charging)
+            {
+                ToastService.NotifyChargingStarted();
+            }
+
+            _lastBatteryStatus = report.Status;
+        }
+        catch
+        {
+            // Battery API failure is non-fatal — the tray icon just stays as-is.
+        }
+    }
+
+    private System.Drawing.Icon? _currentBatteryIcon;
+
+    private void UpdateTrayIcon(int pct, bool charging)
+    {
+        try
+        {
+            var newIcon  = IconGenerator.RenderBatteryIcon(pct, charging);
+            var oldIcon  = _currentBatteryIcon;
+            _trayIcon!.Icon    = newIcon;
+            _currentBatteryIcon = newIcon;
+            oldIcon?.Dispose();
+        }
+        catch
+        {
+            // Icon rendering failure is non-fatal.
+        }
+    }
+
+    // ── Update check ──────────────────────────────────────────────────────────
+
+    private void ScheduleUpdateCheck()
+    {
+        // Delay 30 s after startup so it doesn't slow down the cold-start path.
+        Task.Delay(TimeSpan.FromSeconds(30))
+            .ContinueWith(_ => UpdateCheckService.CheckAsync(version =>
+            {
+                // Marshal to UI thread to update the tray tooltip / menu.
+                _trayIcon?.DispatcherQueue.TryEnqueue(() =>
+                {
+                    if (_trayIcon is not null)
+                        _trayIcon.ToolTipText = $"Lenovo Power Tray — update available: v{version}";
+                    _menu?.SetUpdateBadge(version);
+                });
+            }));
     }
 
     // ── Dashboard ─────────────────────────────────────────────────────────────
@@ -79,6 +187,9 @@ public partial class App : Application
 
     private void Shutdown()
     {
+        Battery.AggregateBattery.ReportUpdated -= OnBatteryReportUpdated;
+        _currentBatteryIcon?.Dispose();
+        ToastService.Cleanup();
         _trayIcon?.Dispose();
         Application.Current.Exit();
     }

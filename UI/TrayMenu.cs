@@ -17,6 +17,7 @@ namespace LenovoTray.UI;
 internal sealed class TrayMenu
 {
     private readonly List<(ToggleMenuFlyoutItem Item, IToggleFeature Feature)> _toggles = [];
+    private MenuFlyoutItem? _updateItem;
 
     /// <summary>The flyout to assign to <c>TaskbarIcon.ContextFlyout</c>.</summary>
     public MenuFlyout Flyout { get; }
@@ -39,6 +40,32 @@ internal sealed class TrayMenu
         Flyout.Items.Add(new MenuFlyoutItem { Text = "Exit", Command = new RelayCommand(onExit) });
 
         RefreshState();
+    }
+
+    /// <summary>
+    /// Inserts (or updates) an "Update available" item at the top of the menu.
+    /// Safe to call more than once — subsequent calls update the existing item.
+    /// </summary>
+    public void SetUpdateBadge(string version)
+    {
+        if (_updateItem is not null)
+        {
+            _updateItem.Text = $"⬆ Update available: v{version}";
+            return;
+        }
+
+        _updateItem = new MenuFlyoutItem
+        {
+            Text    = $"⬆ Update available: v{version}",
+            Command = new RelayCommand(() =>
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                    "https://github.com/ezpl/LenovoPowerTray/releases/latest")
+                { UseShellExecute = true })),
+        };
+
+        // Insert before the first toggle item so it's always at the top.
+        Flyout.Items.Insert(0, _updateItem);
+        Flyout.Items.Insert(1, new MenuFlyoutSeparator());
     }
 
     /// <summary>Re-reads live state into the toggle check marks and availability. Call right before the menu opens.</summary>

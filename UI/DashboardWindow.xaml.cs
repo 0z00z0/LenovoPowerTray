@@ -1,12 +1,13 @@
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Media;
 using Windows.Devices.Power;
-using Windows.System.Power;
 using Windows.Foundation;
+using Windows.System.Power;
 using LenovoTray.Helpers;
 using LenovoTray.Services;
-using Microsoft.UI.Xaml.Controls;
 
 namespace LenovoTray.UI;
 
@@ -18,8 +19,9 @@ namespace LenovoTray.UI;
 public sealed partial class DashboardWindow : Window
 {
     // Physical pixel dimensions — DPI scaling is handled by the OS (PerMonitorV2 manifest).
-    private const int WindowWidth  = 280;
-    private const int WindowHeight = 340;
+    private const int WindowWidth          = 280;
+    private const int WindowHeight         = 340;
+    private const int WindowHeightSliders  = 430;  // extra ~90 px when threshold sliders are shown
 
     // Arc gauge geometry: 100×100 px canvas, 7-o'clock start (135°), 270° sweep.
     private const double GaugeCx         = 50;
@@ -35,6 +37,9 @@ public sealed partial class DashboardWindow : Window
 
     // When the popup was last hidden — lets the tray click that auto-dismissed it avoid re-showing.
     private DateTime _hiddenAtUtc = DateTime.MinValue;
+
+    // Guards slider ValueChanged handlers from triggering each other recursively.
+    private bool _updatingSliders = false;
 
     /// <summary>Time elapsed since the window was last hidden.</summary>
     public TimeSpan SinceHidden => DateTime.UtcNow - _hiddenAtUtc;
@@ -62,23 +67,34 @@ public sealed partial class DashboardWindow : Window
         // Load data before making the window visible to avoid a "Loading…" flash.
         Refresh();
 
-        // AppWindow works in physical pixels, but the XAML content is in effective pixels
-        // (DIPs). Size and place using the work area + DPI of the monitor under the cursor
-        // (the screen whose tray was clicked) so content isn't clipped or shown off-monitor.
-        var (work, s) = NativeMethods.GetCursorMonitorMetrics();
-        int w      = (int)Math.Ceiling(WindowWidth  * s);
-        int h      = (int)Math.Ceiling(WindowHeight * s);
-        int margin = (int)Math.Ceiling(EdgeMargin   * s);
-
-        AppWindow.Resize(new Windows.Graphics.SizeInt32(w, h));
-        AppWindow.Move(new Windows.Graphics.PointInt32(
-            work.Right  - w - margin,
-            work.Bottom - h - margin));
+        // Size and position using the initial (base) height; ApplyStatusBadges will resize
+        // if the sliders section needs to expand after the background read completes.
+        PlaceWindow(WindowHeight);
 
         AppWindow.Show();
 
         // Activate() fires the Activated event, which starts the refresh timer.
         Activate();
+    }
+
+    /// <summary>
+    /// Resizes and repositions the window (above the tray, bottom-right corner) to the
+    /// requested logical height. Callable from any thread — uses AppWindow which is thread-safe.
+    /// </summary>
+    private void PlaceWindow(int logicalHeight)
+    {
+        // AppWindow works in physical pixels, but the XAML content is in effective pixels
+        // (DIPs). Size and place using the work area + DPI of the monitor under the cursor
+        // (the screen whose tray was clicked) so content isn't clipped or shown off-monitor.
+        var (work, s) = NativeMethods.GetCursorMonitorMetrics();
+        int w      = (int)Math.Ceiling(WindowWidth  * s);
+        int h      = (int)Math.Ceiling(logicalHeight * s);
+        int margin = (int)Math.Ceiling(EdgeMargin    * s);
+
+        AppWindow.Resize(new Windows.Graphics.SizeInt32(w, h));
+        AppWindow.Move(new Windows.Graphics.PointInt32(
+            work.Right  - w - margin,
+            work.Bottom - h - margin));
     }
 
     /// <summary>Hides the window without destroying it so it can be shown again cheaply.</summary>
@@ -205,6 +221,39 @@ public sealed partial class DashboardWindow : Window
             SmartChargeDetailText.Text      = chargeState is null ? "Unavailable" : "Not supported";
         }
 
+        // ── Gauge threshold tick markers ──────────────────────────────────────
+        if (chargeState is { Capable: true, Enabled: true, Start: > 0, Stop: > 0 })
+        {
+            double startAngle = GaugeStartAngle + GaugeSweep * chargeState.Start / 100.0;
+            double stopAngle  = GaugeStartAngle + GaugeSweep * chargeState.Stop  / 100.0;
+            GaugeStartTick.Data       = BuildTickGeometry(GaugeCx, GaugeCy, startAngle);
+            GaugeStopTick.Data        = BuildTickGeometry(GaugeCx, GaugeCy, stopAngle);
+            GaugeStartTick.Visibility = Visibility.Visible;
+            GaugeStopTick.Visibility  = Visibility.Visible;
+        }
+        else
+        {
+            GaugeStartTick.Visibility = Visibility.Collapsed;
+            GaugeStopTick.Visibility  = Visibility.Collapsed;
+        }
+
+        // ── Threshold sliders ─────────────────────────────────────────────────
+        bool showSliders = chargeState is { Capable: true, Enabled: true };
+        if (showSliders && chargeState!.Start > 0 && chargeState.Stop > 0)
+        {
+            _updatingSliders  = true;
+            StartSlider.Value = chargeState.Start;
+            StopSlider.Value  = chargeState.Stop;
+            StartValueText.Text = $"{chargeState.Start}%";
+            StopValueText.Text  = $"{chargeState.Stop}%";
+            _updatingSliders  = false;
+        }
+        ThresholdSliders.Visibility = showSliders ? Visibility.Visible : Visibility.Collapsed;
+
+        // Resize window so sliders fit without clipping (only when already visible).
+        if (AppWindow.IsVisible)
+            PlaceWindow(showSliders ? WindowHeightSliders : WindowHeight);
+
         // ── Smart Standby ─────────────────────────────────────────────────────
         SetFeatureBadge(SmartStandbyBadge, SmartStandbyIndicator, standbyOn);
         SmartStandbyDetailText.Text = standbyOn
@@ -217,6 +266,64 @@ public sealed partial class DashboardWindow : Window
     {
         badge.Background     = on ? AppColors.BadgeActiveBrush    : AppColors.BadgeInactiveBrush;
         indicator.Background = on ? AppColors.IndicatorGreenBrush : AppColors.IndicatorGreyBrush;
+    }
+
+    // ── Threshold slider handlers ─────────────────────────────────────────────
+
+    private void OnStartSliderChanged(object sender, RangeBaseValueChangedEventArgs e)
+    {
+        if (_updatingSliders) return;
+        int val = (int)e.NewValue;
+        StartValueText.Text = $"{val}%";
+        // Enforce at least a 5% gap between start and stop.
+        if (StopSlider.Value <= val)
+        {
+            _updatingSliders   = true;
+            StopSlider.Value   = Math.Min(val + 5, 100);
+            StopValueText.Text = $"{(int)StopSlider.Value}%";
+            _updatingSliders   = false;
+        }
+    }
+
+    private void OnStopSliderChanged(object sender, RangeBaseValueChangedEventArgs e)
+    {
+        if (_updatingSliders) return;
+        int val = (int)e.NewValue;
+        StopValueText.Text = $"{val}%";
+        // Enforce at least a 5% gap.
+        if (StartSlider.Value >= val)
+        {
+            _updatingSliders    = true;
+            StartSlider.Value   = Math.Max(val - 5, 5);
+            StartValueText.Text = $"{(int)StartSlider.Value}%";
+            _updatingSliders    = false;
+        }
+    }
+
+    private void OnApplyThresholds(object sender, RoutedEventArgs e)
+    {
+        int start = (int)StartSlider.Value;
+        int stop  = (int)StopSlider.Value;
+        ApplyThresholdsButton.IsEnabled = false;
+        Task.Run(() =>
+        {
+            bool ok = ChargeThresholdService.SetThresholds(start, stop);
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                ApplyThresholdsButton.IsEnabled = true;
+                SmartChargeDetailText.Text = ok
+                    ? $"Custom: {start}% → {stop}%"
+                    : "Error — check driver";
+                // Refresh tick marks immediately to reflect the new thresholds.
+                if (ok)
+                {
+                    GaugeStartTick.Data = BuildTickGeometry(GaugeCx, GaugeCy,
+                        GaugeStartAngle + GaugeSweep * start / 100.0);
+                    GaugeStopTick.Data  = BuildTickGeometry(GaugeCx, GaugeCy,
+                        GaugeStartAngle + GaugeSweep * stop  / 100.0);
+                }
+            });
+        });
     }
 
     // ── Arc gauge ─────────────────────────────────────────────────────────────
@@ -234,6 +341,24 @@ public sealed partial class DashboardWindow : Window
             <= 50 => AppColors.GaugeMedBrush,
             _     => AppColors.GaugeHighBrush
         };
+    }
+
+    /// <summary>
+    /// Builds a short radial tick-mark line on the gauge arc at the given clock-face angle.
+    /// Used to mark the Smart Charge start and stop thresholds.
+    /// </summary>
+    private static Geometry BuildTickGeometry(double cx, double cy, double angleDeg)
+    {
+        const double innerR = GaugeRadius - 6;
+        const double outerR = GaugeRadius + 6;
+        double rad = (angleDeg - 90) * Math.PI / 180;
+        var p1 = new Point(cx + innerR * Math.Cos(rad), cy + innerR * Math.Sin(rad));
+        var p2 = new Point(cx + outerR * Math.Cos(rad), cy + outerR * Math.Sin(rad));
+        var figure = new PathFigure { StartPoint = p1, IsClosed = false };
+        figure.Segments.Add(new LineSegment { Point = p2 });
+        var geo = new PathGeometry();
+        geo.Figures.Add(figure);
+        return geo;
     }
 
     /// <summary>

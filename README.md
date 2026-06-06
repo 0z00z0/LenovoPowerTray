@@ -7,8 +7,9 @@ A lightweight Windows **system-tray app** for Lenovo ThinkPad laptops (built and
   (the same one Lenovo Vantage uses), through a small native bridge (`LenPower.dll`)
 - **Smart Standby** — Modern Standby scheduling, via the `LenovoSmartStandby` Windows service
 
-Left-click the tray icon for a battery dashboard (arc gauge, power source, charge/drain rate,
-live feature status); right-click for quick toggles plus a launch-at-startup option.
+Left-click the tray icon for a battery dashboard (arc gauge with live % and charge-rate, threshold
+tick markers, adjustable start/stop sliders); right-click for quick toggles plus a launch-at-startup
+option. The tray icon itself shows a live battery-level arc, colour-coded green/orange/red.
 
 > ### ⚠️ 100% vibe coded
 > This project was written **entirely by an AI assistant ("vibe coded")** through natural-language
@@ -42,11 +43,42 @@ service requires administrator rights.
 ## Requirements
 
 - Windows 10 (1809+) / Windows 11 on a Lenovo ThinkPad
-- .NET 10 SDK to build the app
-- A C++ toolset (Visual Studio / Build Tools with **"Desktop development with C++"**) to build the
-  native Smart Charge bridge — only needed once; the rest of the app builds without it
 - **Administrator rights** — both features require elevation (the app manifest declares
   `requireAdministrator`)
+
+### Smart Charge prerequisite — Lenovo Power Management Driver
+
+Smart Charge talks directly to the **Lenovo Power Management Driver** (Windows service `PWMGR`,
+"Lenovo Power and Battery") — the same service Lenovo Vantage uses under the hood.
+
+**You do not need Lenovo Vantage.** You do need the driver.
+
+It ships as part of the ThinkPad hardware driver package. If your laptop originally shipped with
+Windows (or has had a full driver installation) it is almost certainly already present.
+
+To check — run in an elevated PowerShell:
+
+```powershell
+Get-Service -Name PWMGR -ErrorAction SilentlyContinue
+```
+
+If the service appears (`Running` or `Stopped`), Smart Charge will work. If nothing is returned,
+install the driver:
+
+1. Go to your model's driver page on [Lenovo Support](https://support.lenovo.com/) (search your
+   model name / serial number, or use
+   [PC Support Auto-Detect](https://support.lenovo.com/us/en/solutions/ht003029)).
+2. Select **Drivers & Software → category Power Management**.
+3. Download and run **"Power Management Driver for Windows 10 and 11 (64-bit)"**.
+
+If the driver is absent, Smart Charge shows as **Unavailable** in the tray and dashboard — the
+rest of the app (Smart Standby, auto-start, battery gauge) works fine without it.
+
+### Build prerequisites
+
+- .NET 10 SDK
+- A C++ toolset (Visual Studio / Build Tools with **"Desktop development with C++"**) to build the
+  native Smart Charge bridge (`native/`) — only needed once
 
 ## Build from source
 
