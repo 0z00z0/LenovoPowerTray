@@ -52,3 +52,17 @@ _ReSharper*/
 # Generated files
 Generated\ Files/
 *_wpftmp.csproj
+
+# Installer build output (self-contained publish + compiled Setup.exe — not committed).
+publish/
+installer/Output/
+
+# Native bridge build artifacts (source-only: ship native\*.idl, *.c, build.cmd, *.ps1).
+# MIDL output + compiled objects/DLL are produced by native\build.cmd and not committed.
+native/LenPower.dll
+native/*.obj
+native/*.lib
+native/*.exp
+native/pwrmgr_c.c
+native/pwrmgr_s.c
+native/pwrmgr_h.h

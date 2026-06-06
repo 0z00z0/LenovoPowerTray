@@ -27,11 +27,10 @@ internal sealed class TrayMenu
 
         foreach (var feature in features)
         {
-            var item = new ToggleMenuFlyoutItem
-            {
-                Text    = feature.Name,
-                Command = new RelayCommand(() => Toggle(feature)),
-            };
+            var item = new ToggleMenuFlyoutItem { Text = feature.Name };
+            // Capture current IsChecked at click time to avoid TOCTOU: the target state comes
+            // from the item the user just interacted with rather than a fresh OS read.
+            item.Command = new RelayCommand(() => Toggle(feature, !item.IsChecked));
             _toggles.Add((item, feature));
             Flyout.Items.Add(item);
         }
@@ -42,24 +41,36 @@ internal sealed class TrayMenu
         RefreshState();
     }
 
-    /// <summary>Re-reads live state into the toggle check marks. Call right before the menu opens.</summary>
+    /// <summary>Re-reads live state into the toggle check marks and availability. Call right before the menu opens.</summary>
     public void RefreshState()
     {
         foreach (var (item, feature) in _toggles)
-            item.IsChecked = SafeIsEnabled(feature);
+        {
+            item.IsEnabled = SafeCall(() => feature.IsAvailable, fallback: true);
+            item.IsChecked = item.IsEnabled && SafeCall(() => feature.IsEnabled, fallback: false);
+        }
     }
 
-    // Read current state and flip it off the UI thread — BIOS/service writes can block for seconds.
-    private static void Toggle(IToggleFeature feature)
+    // Apply target state off the UI thread — RPC/service writes can block for seconds.
+    private static void Toggle(IToggleFeature feature, bool enable)
         => Task.Run(() =>
         {
-            try { feature.SetEnabled(!SafeIsEnabled(feature)); }
-            catch { /* feature implementations already fail soft; guard the thread regardless */ }
+            try
+            {
+                bool ok = feature.SetEnabled(enable);
+                if (!ok)
+                    System.Diagnostics.Debug.WriteLine($"[TrayMenu] Toggle '{feature.Name}' → {enable} returned false");
+            }
+            catch (Exception ex)
+            {
+                // AutoStartFeature can throw InvalidOperationException when exe path can't be resolved.
+                System.Diagnostics.Debug.WriteLine($"[TrayMenu] Toggle '{feature.Name}' failed: {ex.Message}");
+            }
         });
 
-    private static bool SafeIsEnabled(IToggleFeature feature)
+    private static T SafeCall<T>(Func<T> fn, T fallback)
     {
-        try { return feature.IsEnabled; }
-        catch { return false; }
+        try { return fn(); }
+        catch { return fallback; }
     }
 }

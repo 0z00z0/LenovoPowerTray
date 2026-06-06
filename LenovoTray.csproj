@@ -13,11 +13,26 @@
     <EnableMsixTooling>false</EnableMsixTooling>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- Embeds the multi-size icon in the exe so it shows in Programs & Features,
+         the uninstall entry, Explorer, and the UAC elevation prompt. -->
+    <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
     <Content Include="Assets\AppIcon.ico" />
     <Content Include="Assets\LenovoRed.ico" Condition="Exists('Assets\LenovoRed.ico')" />
+  </ItemGroup>
+
+  <!--
+    Native bridge to the Lenovo Power Manager RPC interface (Smart Charge thresholds).
+    Built separately via native\build.cmd; copied next to the app so the P/Invoke in
+    ChargeThresholdService can load it. Not part of the managed compile.
+  -->
+  <ItemGroup>
+    <None Include="native\LenPower.dll" Condition="Exists('native\LenPower.dll')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>LenPower.dll</Link>
+    </None>
   </ItemGroup>
 
   <ItemGroup>
@@ -29,7 +44,6 @@
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.1839" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.1.3" />
     <PackageReference Include="System.Drawing.Common" Version="10.0.8" />
-    <PackageReference Include="System.Management" Version="10.0.8" />
     <PackageReference Include="System.ServiceProcess.ServiceController" Version="10.0.8" />
     <PackageReference Include="TaskScheduler" Version="2.12.2" />
   </ItemGroup>
@@ -40,8 +54,7 @@
     'sign.ps1 -Setup'. ContinueOnError keeps the build green if no cert is present.
   -->
   <Target Name="SignOutput" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
-    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\sign.ps1&quot; -Path &quot;$(TargetDir)$(AssemblyName).exe&quot;"
-          ContinueOnError="true" />
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\sign.ps1&quot; -Path &quot;$(TargetDir)$(AssemblyName).exe&quot;" ContinueOnError="true" />
   </Target>
 
   <!-- Publish Properties -->
@@ -51,4 +64,17 @@
     <PublishTrimmed Condition="'$(Configuration)' == 'Debug'">False</PublishTrimmed>
     <PublishTrimmed Condition="'$(Configuration)' != 'Debug'">True</PublishTrimmed>
   </PropertyGroup>
+
+  <!--
+    `dotnet publish` for an unpackaged WinUI 3 app drops the app resource index
+    ($(AssemblyName).pri, e.g. LenovoTray.pri) — it holds the compiled XAML resources
+    (App.xaml dictionaries, control templates). Without it Microsoft.UI.Xaml.dll crashes
+    at startup with a stowed exception (0xC000027B). Copy it into the publish output.
+  -->
+  <Target Name="CopyAppPriToPublish" AfterTargets="Publish"
+          Condition="Exists('$(OutDir)$(AssemblyName).pri')">
+    <Copy SourceFiles="$(OutDir)$(AssemblyName).pri"
+          DestinationFolder="$(PublishDir)"
+          SkipUnchangedFiles="true" />
+  </Target>
 </Project>

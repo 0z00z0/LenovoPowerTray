@@ -123,8 +123,17 @@ public sealed partial class DashboardWindow : Window
 
     private void Refresh()
     {
+        // Battery info uses WinRT APIs that must stay on the UI thread.
         RefreshBatteryInfo();
-        RefreshStatusBadges();
+
+        // Badge updates read from RPC/service — do that work off-thread so a slow Lenovo
+        // Power Manager response doesn't freeze the window, then marshal back to apply.
+        Task.Run(() =>
+        {
+            var chargeState = ChargeThresholdService.Read();
+            bool standbyOn  = StandbyService.IsRunning();
+            DispatcherQueue.TryEnqueue(() => ApplyStatusBadges(chargeState, standbyOn));
+        });
     }
 
     private void RefreshBatteryInfo()
@@ -173,34 +182,41 @@ public sealed partial class DashboardWindow : Window
         }
     }
 
-    private void RefreshStatusBadges()
+    // Called on the UI thread after the background read completes.
+    private void ApplyStatusBadges(ChargeThresholdState? chargeState, bool standbyOn)
     {
         // ── Smart Charge ──────────────────────────────────────────────────────
-        var chargeState = WmiService.ReadSmartChargeState();
-        if (chargeState is not null)
+        if (chargeState is { Capable: true })
         {
-            SmartChargeBadge.Background    = chargeState.IsEnabled ? AppColors.BadgeActiveBrush   : AppColors.BadgeInactiveBrush;
-            SmartChargeIndicator.Background = chargeState.IsEnabled ? AppColors.IndicatorGreenBrush : AppColors.IndicatorGreyBrush;
-            SmartChargeDetailText.Text      = chargeState.IsEnabled
-                ? chargeState is { StartThreshold: int start, StopThreshold: int stop }
-                    ? $"Custom: {start}% → {stop}%"
-                    : "On — custom thresholds"
-                : "Off — charges to 100%";
+            SetFeatureBadge(SmartChargeBadge, SmartChargeIndicator, chargeState.Enabled);
+            SmartChargeDetailText.Text = chargeState.Enabled switch
+            {
+                true when chargeState.Start > 0 && chargeState.Stop > 0
+                    => $"Custom: {chargeState.Start}% → {chargeState.Stop}%",
+                true  => "On — reading thresholds…",
+                false => "Off — charges to 100%"
+            };
         }
         else
         {
-            SmartChargeBadge.Background    = AppColors.BadgeInactiveBrush;
+            // Read failed (driver/DLL missing or RPC error) or firmware reports not capable.
+            SmartChargeBadge.Background     = AppColors.BadgeInactiveBrush;
             SmartChargeIndicator.Background = AppColors.IndicatorOrangeBrush;
-            SmartChargeDetailText.Text      = "Could not read WMI";
+            SmartChargeDetailText.Text      = chargeState is null ? "Unavailable" : "Not supported";
         }
 
         // ── Smart Standby ─────────────────────────────────────────────────────
-        bool standbyOn = StandbyService.IsRunning();
-        SmartStandbyBadge.Background    = standbyOn ? AppColors.BadgeActiveBrush   : AppColors.BadgeInactiveBrush;
-        SmartStandbyIndicator.Background = standbyOn ? AppColors.IndicatorGreenBrush : AppColors.IndicatorGreyBrush;
-        SmartStandbyDetailText.Text      = standbyOn
+        SetFeatureBadge(SmartStandbyBadge, SmartStandbyIndicator, standbyOn);
+        SmartStandbyDetailText.Text = standbyOn
             ? "Active — scheduling idle sleep"
             : "Off — always Modern Standby";
+    }
+
+    /// <summary>Applies active/inactive colours to a feature badge + indicator pair.</summary>
+    private static void SetFeatureBadge(Border badge, Border indicator, bool on)
+    {
+        badge.Background     = on ? AppColors.BadgeActiveBrush    : AppColors.BadgeInactiveBrush;
+        indicator.Background = on ? AppColors.IndicatorGreenBrush : AppColors.IndicatorGreyBrush;
     }
 
     // ── Arc gauge ─────────────────────────────────────────────────────────────

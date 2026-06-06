@@ -1,0 +1,180 @@
+; Inno Setup script for Lenovo Power Tray.
+;
+; Per-user install (no admin required). The app itself is requireAdministrator and
+; elevates at runtime; the installer does not. The optional "Run at startup" task is
+; the ONLY thing that elevates, and only if the user ticks it (see RegisterStartupTask).
+;
+; Build via installer\build-installer.ps1, which publishes the app and passes
+; /DPublishDir and /DAppVersion to ISCC.
+
+#define AppName       "Lenovo Power Tray"
+#define AppExe        "LenovoTray.exe"
+#define AppPublisher  "Zero Zero Software"
+#define AppUrl        "https://github.com/ezpl/LenovoPowerTray"
+#define TaskName      "LenovoTray AutoStart"
+
+#ifndef AppVersion
+  #define AppVersion "1.0.0"
+#endif
+#ifndef PublishDir
+  #define PublishDir "..\publish"
+#endif
+
+[Setup]
+; AppId uniquely identifies this app for upgrades/uninstall — do not change it.
+AppId={{B1F8E4B2-3D7A-4C56-9E2F-7A1C9D5E6F40}
+AppName={#AppName}
+AppVersion={#AppVersion}
+AppPublisher={#AppPublisher}
+AppPublisherURL={#AppUrl}
+AppSupportURL={#AppUrl}
+DefaultDirName={autopf}\{#AppName}
+DefaultGroupName={#AppName}
+DisableProgramGroupPage=yes
+UninstallDisplayName={#AppName}
+UninstallDisplayIcon={app}\{#AppExe}
+; Per-user: installs under %LocalAppData%\Programs, no UAC for the install itself.
+PrivilegesRequired=lowest
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
+OutputDir=Output
+OutputBaseFilename=LenovoPowerTray-Setup
+SetupIconFile=..\Assets\AppIcon.ico
+Compression=lzma2
+SolidCompression=yes
+WizardStyle=modern
+; Let a silent (background) update close the running tray app and replace its files.
+; Do NOT auto-restart it afterwards — the app is requireAdministrator, so relaunching
+; would pop a UAC prompt out of nowhere. It returns at the next sign-in / manual launch.
+CloseApplications=yes
+RestartApplications=no
+
+[Files]
+Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
+
+[Icons]
+Name: "{group}\{#AppName}";        Filename: "{app}\{#AppExe}"
+Name: "{userstartmenu}\{#AppName}"; Filename: "{app}\{#AppExe}"
+
+[Tasks]
+Name: "runstartup"; Description: "Run {#AppName} automatically at sign-in (starts elevated without a UAC prompt at boot)"; Flags: unchecked
+Name: "autoupdate"; Description: "Auto update in background (checks for updates via winget after each sign-in)"
+
+; NOTE: launching the app is handled in [Code] (LaunchApp), not [Run]. A [Run] entry uses
+; CreateProcess, which CANNOT start a requireAdministrator exe (fails with "elevation
+; required"). LaunchApp starts it correctly — via the elevated logon task if one exists
+; (no extra prompt), otherwise via ShellExec (the single UAC prompt the app needs).
+
+[Code]
+const
+  TaskName       = '{#TaskName}';
+  UpdateTaskName = 'LenovoTray AutoUpdate';
+
+function ScheduledTaskExists(): Boolean;
+var
+  ResultCode: Integer;
+begin
+  // Querying does not require elevation; exit code 0 = the task exists.
+  Result := Exec('schtasks.exe', '/Query /TN "' + TaskName + '"', '',
+                 SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
+end;
+
+procedure RegisterStartupTask();
+var
+  ResultCode: Integer;
+  Params: string;
+begin
+  // A logon task with RL HIGHEST lets the elevated app auto-start with no boot-time UAC
+  // prompt. Creating a HIGHEST task needs admin, so this one step elevates via 'runas'
+  // (exactly one UAC prompt — and only because the user ticked "Run at startup").
+  Params := '/Create /TN "' + TaskName + '" /TR "\"' + ExpandConstant('{app}\{#AppExe}') +
+            '\"" /SC ONLOGON /RL HIGHEST /F';
+  if not ShellExec('runas', 'schtasks.exe', Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+    MsgBox('Could not create the startup task. You can still enable "Launch at startup" '
+           + 'from the app''s tray menu later.', mbInformation, MB_OK);
+end;
+
+function AppIsRunning(): Boolean;
+var
+  ResultCode: Integer;
+begin
+  // tasklist|find: exit 0 only when a LenovoTray.exe process is present. Works without
+  // elevation (the image name is visible even for an elevated process).
+  Result := Exec(ExpandConstant('{cmd}'),
+                 '/C tasklist /FI "IMAGENAME eq {#AppExe}" /NH | find /I "{#AppExe}"',
+                 '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
+end;
+
+procedure StopAppAndRemoveStartupTask();
+var
+  ResultCode: Integer;
+begin
+  // Stopping the running (elevated) app and deleting its RL HIGHEST logon task both need
+  // admin, so do them together in one elevated cmd -> at most ONE UAC prompt on uninstall.
+  ShellExec('runas', ExpandConstant('{cmd}'),
+            '/C taskkill /IM "{#AppExe}" /F & schtasks /Delete /TN "' + TaskName + '" /F',
+            '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
+procedure RegisterAutoUpdateTask();
+var
+  ResultCode: Integer;
+  Params: string;
+begin
+  // Per-user, NON-elevated logon task (runs 5 min after sign-in) that lets winget pull
+  // any newer published version silently. No /RL HIGHEST -> creating it needs no admin,
+  // so the "Auto update in background" option never triggers a UAC prompt.
+  Params := '/Create /TN "' + UpdateTaskName + '" /TR "winget upgrade --id ezpl.LenovoPowerTray '
+          + '--silent --accept-package-agreements --accept-source-agreements" /SC ONLOGON '
+          + '/DELAY 0005:00 /F';
+  Exec('schtasks.exe', Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
+procedure RemoveAutoUpdateTask();
+var
+  ResultCode: Integer;
+begin
+  // Non-elevated; harmless if the task doesn't exist.
+  Exec('schtasks.exe', '/Delete /TN "' + UpdateTaskName + '" /F', '',
+       SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
+procedure LaunchApp();
+var
+  ResultCode: Integer;
+begin
+  if ScheduledTaskExists() then
+    // The elevated logon task exists -> run it on demand to start the app elevated
+    // with NO extra UAC prompt (scheduled tasks bypass the consent prompt).
+    Exec('schtasks.exe', '/Run /TN "' + TaskName + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode)
+  else
+    // No task -> launch via the shell so requireAdministrator triggers the single UAC
+    // prompt the app needs (a [Run]/CreateProcess launch would just fail here).
+    ShellExec('open', ExpandConstant('{app}\{#AppExe}'), '', '', SW_SHOWNORMAL, ewNoWait, ResultCode);
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then
+  begin
+    if WizardIsTaskSelected('runstartup') then RegisterStartupTask();
+    if WizardIsTaskSelected('autoupdate') then RegisterAutoUpdateTask();
+    // Auto-launch only on an interactive install (not silent winget installs). Runs after
+    // task creation so a freshly-created startup task is used for a prompt-free launch.
+    if not WizardSilent() then LaunchApp();
+  end;
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  // usUninstall fires just BEFORE files are removed — stop the app first so its files
+  // aren't locked, otherwise the uninstall leaves the exe behind and the app keeps running.
+  if CurUninstallStep = usUninstall then
+  begin
+    // Elevate once only if there's something elevated to do (app running or HIGHEST task).
+    if AppIsRunning() or ScheduledTaskExists() then
+      StopAppAndRemoveStartupTask();
+
+    RemoveAutoUpdateTask();   // non-elevated, no prompt
+  end;
+end;

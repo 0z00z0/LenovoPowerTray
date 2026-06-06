@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+PackageIdentifier: ezpl.LenovoPowerTray
+PackageVersion: 1.0.0
+PackageLocale: en-US
+Publisher: Zero Zero Software
+PublisherUrl: https://0z0.xyz
+PublisherSupportUrl: https://github.com/ezpl/LenovoPowerTray/issues
+PackageName: Lenovo Power Tray
+PackageUrl: https://github.com/ezpl/LenovoPowerTray
+License: MIT
+LicenseUrl: https://github.com/ezpl/LenovoPowerTray/blob/main/LICENSE
+ShortDescription: System-tray app for ThinkPad Smart Charge and Smart Standby.
+Description: >-
+  A lightweight Windows system-tray app for Lenovo ThinkPad laptops that toggles
+  Smart Charge (battery charge threshold) and Smart Standby without opening the
+  Lenovo Vantage app. The app requires administrator rights at runtime.
+Moniker: lenovopowertray
+Tags:
+  - lenovo
+  - thinkpad
+  - battery
+  - power
+  - tray
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

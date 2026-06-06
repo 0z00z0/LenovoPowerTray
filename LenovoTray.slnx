@@ -1,0 +1,36 @@
+<Solution>
+  <!--
+    Declare solution configs that match the project's platforms exactly (x86/x64/ARM64,
+    no "Any CPU"). Otherwise VS synthesises a Debug|Any CPU solution config and maps it
+    to a project config that doesn't exist.
+  -->
+  <Configurations>
+    <BuildType Name="Debug" />
+    <BuildType Name="Release" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+    <Platform Name="ARM64" />
+  </Configurations>
+  <Project Path="LenovoTray.csproj" />
+  <Folder Name="/native/">
+    <File Path="native/pwrmgr.idl" />
+    <File Path="native/lenpower.c" />
+    <File Path="native/build.cmd" />
+    <File Path="native/test-read.ps1" />
+  </Folder>
+  <Folder Name="/installer/">
+    <File Path="installer/LenovoPowerTray.iss" />
+    <File Path="installer/build-installer.ps1" />
+    <File Path="installer/README.md" />
+    <File Path="installer/winget/ezpl.LenovoPowerTray.installer.yaml" />
+    <File Path="installer/winget/ezpl.LenovoPowerTray.locale.en-US.yaml" />
+    <File Path="installer/winget/ezpl.LenovoPowerTray.yaml" />
+  </Folder>
+  <Folder Name="/Solution Items/">
+    <File Path="README.md" />
+    <File Path="USAGE.md" />
+    <File Path="LICENSE" />
+    <File Path="sign.ps1" />
+    <File Path=".gitignore" />
+  </Folder>
+</Solution>

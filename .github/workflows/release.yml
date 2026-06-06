@@ -1,0 +1,273 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g. 1.2.3 — without the leading v)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Build, sign, and publish the installer
+  # ─────────────────────────────────────────────────────────────────────────────
+  release:
+    runs-on: windows-latest
+
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      # ── 1. Checkout (full history so tags resolve) ──────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ── 2. Resolve version string ────────────────────────────────────────────
+      # Tag-triggered: strip the leading 'v'.
+      # workflow_dispatch: use the input; fall back to '0.0.0-dev'.
+      - name: Resolve version
+        id: version
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF -match '^refs/tags/v(.+)$') {
+            $ver = $Matches[1]
+          } elseif ('${{ github.event.inputs.version }}' -ne '') {
+            $ver = '${{ github.event.inputs.version }}'
+          } else {
+            $ver = '0.0.0-dev'
+          }
+          Write-Host "Version: $ver"
+          "version=$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      # ── 3. Set up .NET 10 ────────────────────────────────────────────────────
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.x'
+
+      # ── 4. Install Inno Setup 6 via Chocolatey ───────────────────────────────
+      - name: Install Inno Setup 6
+        shell: pwsh
+        run: choco install innosetup -y --no-progress
+
+      # ── 5. Set up MSVC C++ environment ───────────────────────────────────────
+      # ilammy/msvc-dev-cmd calls vcvars64.bat and exports the env vars into the
+      # subsequent steps, so build.cmd's own vcvars call is a no-op (harmless).
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      # ── 6. Build native bridge (LenPower.dll) ────────────────────────────────
+      - name: Build native bridge
+        shell: cmd
+        run: native\build.cmd
+
+      # ── 7. Build installer (publish + ISCC) ──────────────────────────────────
+      # build-installer.ps1 re-runs native\build.cmd and dotnet publish internally.
+      # That's fine: the MSVC env from step 5 is still active, and dotnet publish
+      # is fast on a warm NuGet cache. Keeping it this way means the script remains
+      # usable standalone without changes.
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $ver = '${{ steps.version.outputs.version }}'
+          Write-Host "Building installer for version $ver"
+          & installer\build-installer.ps1 -Version $ver
+
+      # ── 8. Authenticode sign (skipped gracefully when secrets are absent) ────
+      - name: Sign binaries
+        if: ${{ env.CODE_SIGN_PFX != '' }}
+        env:
+          CODE_SIGN_PFX: ${{ secrets.CODE_SIGN_PFX }}
+          CODE_SIGN_PASSWORD: ${{ secrets.CODE_SIGN_PASSWORD }}
+        shell: pwsh
+        run: |
+          # Decode the base64-encoded PFX
+          $pfxPath = Join-Path $env:RUNNER_TEMP 'codesign.pfx'
+          [System.IO.File]::WriteAllBytes(
+            $pfxPath,
+            [System.Convert]::FromBase64String($env:CODE_SIGN_PFX)
+          )
+
+          # Locate signtool.exe (search the Windows Kit bin trees)
+          $signtool = Get-ChildItem -Path 'C:\Program Files (x86)\Windows Kits\10\bin' `
+            -Filter 'signtool.exe' -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -like '*x64*' } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1 -ExpandProperty FullName
+
+          if (-not $signtool) {
+            Write-Error 'signtool.exe not found under Windows Kits.'
+            exit 1
+          }
+          Write-Host "Using signtool: $signtool"
+
+          $targets = @(
+            'publish\LenovoTray.exe',
+            'installer\Output\LenovoPowerTray-Setup.exe'
+          )
+
+          foreach ($t in $targets) {
+            if (-not (Test-Path $t)) {
+              Write-Warning "Target not found, skipping: $t"
+              continue
+            }
+            Write-Host "Signing $t ..."
+            & $signtool sign `
+              /fd SHA256 `
+              /tr http://timestamp.digicert.com `
+              /td SHA256 `
+              /f $pfxPath `
+              /p $env:CODE_SIGN_PASSWORD `
+              $t
+            if ($LASTEXITCODE -ne 0) { throw "signtool failed on $t ($LASTEXITCODE)." }
+          }
+
+          # Remove the PFX immediately after signing
+          Remove-Item $pfxPath -Force
+          Write-Host 'PFX deleted.'
+
+      # ── 9. Compute SHA256 of the installer ───────────────────────────────────
+      - name: Compute installer SHA256
+        id: sha256
+        shell: pwsh
+        run: |
+          $setup = 'installer\Output\LenovoPowerTray-Setup.exe'
+          $hash  = (Get-FileHash $setup -Algorithm SHA256).Hash.ToUpper()
+          Write-Host "SHA256: $hash"
+          "sha256=$hash" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      # ── 10. Update winget installer manifest ─────────────────────────────────
+      - name: Update winget manifest
+        shell: pwsh
+        run: |
+          $ver    = '${{ steps.version.outputs.version }}'
+          $sha256 = '${{ steps.sha256.outputs.sha256 }}'
+          $tag    = "v$ver"
+
+          $installerYaml = 'installer\winget\ezpl.LenovoPowerTray.installer.yaml'
+          $versionYaml   = 'installer\winget\ezpl.LenovoPowerTray.yaml'
+          $localeYaml    = 'installer\winget\ezpl.LenovoPowerTray.locale.en-US.yaml'
+
+          # Helper: replace a YAML scalar in-place
+          function Set-YamlValue {
+            param([string]$File, [string]$Key, [string]$Value)
+            $content = Get-Content $File -Raw
+            $content = $content -replace "(?m)^($Key\s*:\s*).*$", "`${1}$Value"
+            Set-Content $File -Value $content -NoNewline
+          }
+
+          # installer manifest
+          Set-YamlValue $installerYaml 'PackageVersion'   $ver
+          Set-YamlValue $installerYaml 'InstallerSha256'  $sha256
+
+          # Update InstallerUrl to point at the new release asset
+          $url = "https://github.com/${{ github.repository }}/releases/download/$tag/LenovoPowerTray-Setup.exe"
+          Set-YamlValue $installerYaml 'InstallerUrl' $url
+
+          # Also update DisplayVersion inside AppsAndFeaturesEntries
+          Set-YamlValue $installerYaml 'DisplayVersion' $ver
+
+          # version manifest
+          Set-YamlValue $versionYaml 'PackageVersion' $ver
+
+          # locale manifest
+          Set-YamlValue $localeYaml 'PackageVersion' $ver
+
+          Write-Host "Manifests updated:"
+          Get-Content $installerYaml | Write-Host
+
+      # ── 11. Validate winget manifests (against the patched files) ───────────────
+      - name: Validate winget manifests
+        shell: pwsh
+        run: |
+          $wg = Get-Command winget -ErrorAction SilentlyContinue
+          if (-not $wg) {
+            Write-Warning 'winget not found on this runner; skipping manifest validation.'
+          } else {
+            winget validate --manifest installer\winget
+            if ($LASTEXITCODE -ne 0) {
+              Write-Error "winget validate failed (exit $LASTEXITCODE)."
+              exit $LASTEXITCODE
+            }
+            Write-Host 'Manifests are valid.'
+          }
+
+      # ── 12. Create GitHub Release ─────────────────────────────────────────────
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', steps.version.outputs.version) }}
+          name: Lenovo Power Tray v${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: false
+          files: |
+            installer/Output/LenovoPowerTray-Setup.exe
+            installer/winget/ezpl.LenovoPowerTray.installer.yaml
+            installer/winget/ezpl.LenovoPowerTray.yaml
+            installer/winget/ezpl.LenovoPowerTray.locale.en-US.yaml
+          body: |
+            ## Lenovo Power Tray v${{ steps.version.outputs.version }}
+
+            **Install / upgrade via winget:**
+            ```
+            winget install ezpl.LenovoPowerTray
+            winget upgrade ezpl.LenovoPowerTray
+            ```
+
+            Or download `LenovoPowerTray-Setup.exe` below — per-user installer, no admin required.
+
+            **SHA256 (installer):** `${{ steps.sha256.outputs.sha256 }}`
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Post-release: download the manifest assets from the release and re-validate
+  # ─────────────────────────────────────────────────────────────────────────────
+  validate-manifests:
+    runs-on: windows-latest
+    needs: release
+
+    steps:
+      # Download the three winget manifest assets that were attached to the release
+      - name: Download winget manifests from release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = 'v${{ needs.release.outputs.version }}'
+          $outDir = 'winget-validate'
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+
+          $assets = @(
+            'ezpl.LenovoPowerTray.installer.yaml',
+            'ezpl.LenovoPowerTray.yaml',
+            'ezpl.LenovoPowerTray.locale.en-US.yaml'
+          )
+          foreach ($a in $assets) {
+            gh release download $tag --repo ${{ github.repository }} --pattern $a --dir $outDir
+          }
+
+      - name: Validate downloaded manifests
+        shell: pwsh
+        run: |
+          $wg = Get-Command winget -ErrorAction SilentlyContinue
+          if (-not $wg) {
+            Write-Warning 'winget not found on this runner; skipping manifest validation.'
+            exit 0
+          }
+
+          winget validate --manifest winget-validate
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "winget validate failed (exit $LASTEXITCODE)."
+            exit $LASTEXITCODE
+          }
+          Write-Host 'Released manifests are valid.'

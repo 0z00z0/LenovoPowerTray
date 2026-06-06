@@ -38,9 +38,8 @@ internal static class TaskSchedulerHelper
             return;
         }
 
-        // Resolve the path of the running executable
-        var exePath = Environment.ProcessPath
-            ?? System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName
+        // Resolve the path of the running executable.
+        var exePath = Environment.ProcessPath ?? GetMainModulePath()
             ?? throw new InvalidOperationException("Cannot determine executable path for auto-start task.");
 
         var td = ts.NewTask();
@@ -62,5 +61,15 @@ internal static class TaskSchedulerHelper
             userId:    null,
             password:  null,
             logonType: TaskLogonType.InteractiveToken);
+    }
+
+    /// <summary>
+    /// Fallback executable-path lookup used only when <see cref="Environment.ProcessPath"/> is null.
+    /// Disposes the <see cref="System.Diagnostics.Process"/> handle it opens.
+    /// </summary>
+    private static string? GetMainModulePath()
+    {
+        using var proc = System.Diagnostics.Process.GetCurrentProcess();
+        return proc.MainModule?.FileName;
     }
 }
