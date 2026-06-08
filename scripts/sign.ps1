@@ -15,6 +15,9 @@
     To use a real CA-issued certificate instead, import it into Cert:\CurrentUser\My
     with the same -Subject and skip -Setup; signing picks it up by subject name.
 
+    NOTE: The same certificate (CN=Zero Zero Software) is shared with the sibling
+    HyperVManagerTray project. Running -Setup only once (on either project) is sufficient.
+
 .EXAMPLE
     .\sign.ps1 -Setup          # one-time: create + trust the certificate
     .\sign.ps1                 # sign the latest Release build
@@ -84,8 +87,10 @@ if ($Setup) {
 # ── Sign mode ───────────────────────────────────────────────────────────────
 
 # Default to the Release apphost when no path is supplied.
+# This script lives in scripts\, so the project root is one level up.
 if (-not $Path) {
-    $Path = Join-Path $PSScriptRoot "bin\Release\net10.0-windows10.0.26100.0\win-x64\LenovoTray.exe"
+    $repoRoot = Split-Path $PSScriptRoot -Parent
+    $Path = Join-Path $repoRoot "bin\Release\net10.0-windows10.0.26100.0\win-x64\LenovoTray.exe"
 }
 
 if (-not (Test-Path $Path)) {

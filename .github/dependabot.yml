@@ -1,0 +1,20 @@
+version: 2
+updates:
+  # NuGet package updates for the app project.
+  - package-ecosystem: nuget
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      microsoft:
+        patterns:
+          - "Microsoft.*"
+          - "System.*"
+
+  # Keep GitHub Actions (checkout, setup-dotnet, action-gh-release, …) current.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

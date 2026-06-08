@@ -12,6 +12,7 @@
 #define AppPublisher  "Zero Zero Software"
 #define AppUrl        "https://github.com/0z00z0/LenovoPowerTray"
 #define TaskName      "LenovoTray AutoStart"
+#define WingetId      "0z00z0.LenovoPowerTray"
 
 #ifndef AppVersion
   #define AppVersion "1.0.0"
@@ -124,7 +125,7 @@ begin
   // Per-user, NON-elevated logon task (runs 5 min after sign-in) that lets winget pull
   // any newer published version silently. No /RL HIGHEST -> creating it needs no admin,
   // so the "Auto update in background" option never triggers a UAC prompt.
-  Params := '/Create /TN "' + UpdateTaskName + '" /TR "winget upgrade --id 0z00z0.LenovoPowerTray '
+  Params := '/Create /TN "' + UpdateTaskName + '" /TR "winget upgrade --id {#WingetId} '
           + '--silent --accept-package-agreements --accept-source-agreements" /SC ONLOGON '
           + '/DELAY 0005:00 /F';
   Exec('schtasks.exe', Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);

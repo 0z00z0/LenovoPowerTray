@@ -21,6 +21,12 @@ jobs:
   release:
     runs-on: windows-latest
 
+    # Secrets surfaced as job-level env so step `if:` conditions can test them
+    # (a step's own `env:` block is NOT visible to that step's `if:`).
+    env:
+      CODE_SIGN_PFX: ${{ secrets.CODE_SIGN_PFX }}
+      CODE_SIGN_PASSWORD: ${{ secrets.CODE_SIGN_PASSWORD }}
+
     outputs:
       version: ${{ steps.version.outputs.version }}
 
@@ -85,66 +91,49 @@ jobs:
           & installer\build-installer.ps1 -Version $ver
 
       # ── 8. Authenticode sign (skipped gracefully when secrets are absent) ────
+      # Signs with the project's certificate (PFX delivered via the CODE_SIGN_PFX
+      # secret). RFC-3161 timestamped so the signature stays valid after the cert
+      # expires. The app exe is signed FIRST, then the installer is recompiled (so
+      # it bundles the signed exe) and signed once — the shipped installer never
+      # embeds an unsigned exe.
       - name: Sign binaries
         if: ${{ env.CODE_SIGN_PFX != '' }}
-        env:
-          CODE_SIGN_PFX: ${{ secrets.CODE_SIGN_PFX }}
-          CODE_SIGN_PASSWORD: ${{ secrets.CODE_SIGN_PASSWORD }}
         shell: pwsh
         run: |
-          # Decode the base64-encoded PFX
           $pfxPath = Join-Path $env:RUNNER_TEMP 'codesign.pfx'
-          [System.IO.File]::WriteAllBytes(
-            $pfxPath,
-            [System.Convert]::FromBase64String($env:CODE_SIGN_PFX)
-          )
+          [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:CODE_SIGN_PFX))
 
-          # Locate signtool.exe (search the Windows Kit bin trees)
-          $signtool = Get-ChildItem -Path 'C:\Program Files (x86)\Windows Kits\10\bin' `
+          $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' `
             -Filter 'signtool.exe' -Recurse -ErrorAction SilentlyContinue |
             Where-Object { $_.FullName -like '*x64*' } |
-            Sort-Object FullName -Descending |
-            Select-Object -First 1 -ExpandProperty FullName
-
-          if (-not $signtool) {
-            Write-Error 'signtool.exe not found under Windows Kits.'
-            exit 1
-          }
+            Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $signtool) { throw 'signtool.exe not found under Windows Kits.' }
           Write-Host "Using signtool: $signtool"
 
-          $targets = @(
-            'publish\LenovoTray.exe',
-            'installer\Output\LenovoPowerTray-Setup.exe'
-          )
-
-          foreach ($t in $targets) {
-            if (-not (Test-Path $t)) {
-              Write-Warning "Target not found, skipping: $t"
-              continue
-            }
-            Write-Host "Signing $t ..."
-            & $signtool sign `
-              /fd SHA256 `
-              /tr http://timestamp.digicert.com `
-              /td SHA256 `
-              /f $pfxPath `
-              /p $env:CODE_SIGN_PASSWORD `
-              $t
-            if ($LASTEXITCODE -ne 0) { throw "signtool failed on $t ($LASTEXITCODE)." }
+          function Invoke-Sign([string]$path) {
+            & $signtool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 `
+              /f $pfxPath /p $env:CODE_SIGN_PASSWORD $path
+            if ($LASTEXITCODE -ne 0) { throw "signtool failed on $path ($LASTEXITCODE)." }
           }
 
-          # Re-compile the installer so it bundles the freshly-signed app exe, then
-          # re-sign the installer itself (so the distributed installer contains the
-          # signed app and is itself signed).
-          $iscc = Get-ChildItem 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' -ErrorAction SilentlyContinue
-          if ($iscc) {
-            & $iscc.FullName "/DAppVersion=${{ steps.version.outputs.version }}" "/DPublishDir=$(Resolve-Path publish)" installer\LenovoPowerTray.iss
-            & $signtool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /f $pfxPath /p $env:CODE_SIGN_PASSWORD 'installer\Output\LenovoPowerTray-Setup.exe'
-          }
+          # 1) Sign the published app exe.
+          Invoke-Sign 'publish\LenovoTray.exe'
 
-          # Remove the PFX immediately after signing
+          # 2) Recompile the installer (now bundling the signed exe), then sign it.
+          $iscc = (Get-ChildItem 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' -ErrorAction SilentlyContinue).FullName
+          if (-not $iscc) { throw 'ISCC.exe not found.' }
+          & $iscc "/DAppVersion=${{ steps.version.outputs.version }}" "/DPublishDir=$(Resolve-Path publish)" installer\LenovoPowerTray.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed ($LASTEXITCODE)." }
+          Invoke-Sign 'installer\Output\LenovoPowerTray-Setup.exe'
+
           Remove-Item $pfxPath -Force
-          Write-Host 'PFX deleted.'
+          Write-Host 'Signed app exe + installer; PFX deleted.'
+
+      # ── 8b. Warn if signing was skipped (no secret) ──────────────────────────
+      - name: Warn if unsigned
+        if: ${{ env.CODE_SIGN_PFX == '' }}
+        shell: pwsh
+        run: Write-Warning 'CODE_SIGN_PFX secret not set — installer is UNSIGNED. Add the secret to sign CI releases.'
 
       # ── 9. Compute SHA256 of the installer ───────────────────────────────────
       - name: Compute installer SHA256
@@ -212,8 +201,11 @@ jobs:
             Write-Host 'Manifests are valid.'
           }
 
-      # ── 12. Create GitHub Release ─────────────────────────────────────────────
+      # ── 12. Create GitHub Release (tag pushes only) ──────────────────────────
+      # A manual workflow_dispatch is a dry-run: it builds, signs, and validates
+      # the manifests but does NOT publish a release.
       - name: Create GitHub Release
+        if: ${{ github.ref_type == 'tag' }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', steps.version.outputs.version) }}
@@ -244,6 +236,8 @@ jobs:
   validate-manifests:
     runs-on: windows-latest
     needs: release
+    # Only runs for real (tag) releases — a dispatch dry-run publishes no assets.
+    if: ${{ github.ref_type == 'tag' }}
 
     steps:
       # Download the three winget manifest assets that were attached to the release
