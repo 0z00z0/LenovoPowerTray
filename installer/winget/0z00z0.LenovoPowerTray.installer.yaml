@@ -16,7 +16,7 @@ InstallerSwitches:
 # Lets `winget list` / `winget upgrade` match the per-user uninstall entry Inno registers.
 AppsAndFeaturesEntries:
   - DisplayName: Lenovo Power Tray
-    Publisher: Zero Zero Software
+    Publisher: ZeroZero software
     DisplayVersion: 1.0.0
     InstallerType: inno
 Installers:

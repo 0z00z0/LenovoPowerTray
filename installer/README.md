@@ -70,7 +70,7 @@ If either secret is absent the signing step is skipped and the rest of the workf
 
 ```powershell
 # From a machine where the cert is already installed in the personal store:
-$cert = Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.Subject -like '*Zero Zero*' }
+$cert = Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.Subject -like '*ZeroZero*' }
 $pfxPassword = ConvertTo-SecureString 'your-password' -AsPlainText -Force
 Export-PfxCertificate -Cert $cert -FilePath codesign.pfx -Password $pfxPassword
 

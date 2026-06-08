@@ -148,6 +148,6 @@ Jordan Russell & Martijn Laan (free, with attribution under its license), and di
 
 ## License
 
-[MIT](LICENSE) © Zero Zero Software ([0z0.xyz](https://0z0.xyz)) — you are free to use, modify,
+[MIT](LICENSE) © ZeroZero software ([0z0.xyz](https://0z0.xyz)) — you are free to use, modify,
 fork, and redistribute, including commercially, **provided you keep the copyright and license
 notice**. See [LICENSE](LICENSE) for the full text.

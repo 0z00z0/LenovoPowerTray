@@ -9,7 +9,7 @@
 
 #define AppName       "Lenovo Power Tray"
 #define AppExe        "LenovoTray.exe"
-#define AppPublisher  "Zero Zero Software"
+#define AppPublisher  "ZeroZero software"
 #define AppUrl        "https://github.com/0z00z0/LenovoPowerTray"
 #define TaskName      "LenovoTray AutoStart"
 #define WingetId      "0z00z0.LenovoPowerTray"

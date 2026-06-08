@@ -87,7 +87,7 @@ cd installer
 ## Code signing
 
 The app is Authenticode-signed so the UAC elevation prompt shows a verified
-publisher (`Zero Zero Software`) instead of *"Unknown Publisher"*.
+publisher (`ZeroZero software`) instead of *"Unknown Publisher"*.
 
 **One-time setup** — create and trust a self-signed code-signing certificate:
 
@@ -116,7 +116,7 @@ Get-AuthenticodeSignature .\bin\Release\net10.0-windows10.0.26100.0\win-x64\Leno
 - The certificate's private key lives only in the Windows cert store — no `.pfx`
   is written to the project folder, so nothing secret is committed.
 - To use a real CA-issued certificate, import it into `Cert:\CurrentUser\My` with
-  subject `CN=Zero Zero Software` (or pass `-Subject` to `scripts\sign.ps1`); signing picks it up
+  subject `CN=ZeroZero software` (or pass `-Subject` to `scripts\sign.ps1`); signing picks it up
   by subject automatically — no other change needed.
 - A self-signed cert is trusted only on machines where `-Setup` has been run.
   Other machines will still show "Unknown Publisher" unless the public cert is

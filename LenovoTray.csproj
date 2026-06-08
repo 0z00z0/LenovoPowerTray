@@ -11,9 +11,9 @@
     <AssemblyTitle>Lenovo Power Tray</AssemblyTitle>
     <Product>Lenovo Power Tray</Product>
     <Description>Smart Charge &amp; Smart Standby tray app for ThinkPad — direct access to power settings without opening Lenovo Vantage.</Description>
-    <Authors>Zero Zero Software</Authors>
-    <Company>Zero Zero Software</Company>
-    <Copyright>Copyright © 2026 Zero Zero Software</Copyright>
+    <Authors>ZeroZero software</Authors>
+    <Company>ZeroZero software</Company>
+    <Copyright>Copyright © 2026 ZeroZero software</Copyright>
     <RepositoryUrl>https://github.com/0z00z0/LenovoPowerTray</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
 

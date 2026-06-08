@@ -15,7 +15,7 @@
     To use a real CA-issued certificate instead, import it into Cert:\CurrentUser\My
     with the same -Subject and skip -Setup; signing picks it up by subject name.
 
-    NOTE: The same certificate (CN=Zero Zero Software) is shared with the sibling
+    NOTE: The same certificate (CN=ZeroZero software) is shared with the sibling
     HyperVManagerTray project. Running -Setup only once (on either project) is sufficient.
 
 .EXAMPLE
@@ -26,7 +26,7 @@
 param(
     [switch] $Setup,
     [string] $Path,                                        # exe to sign (defaults to Release output)
-    [string] $Subject      = "CN=Zero Zero Software",
+    [string] $Subject      = "CN=ZeroZero software",
     [string] $TimestampUrl = "http://timestamp.digicert.com"
 )
 
