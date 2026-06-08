@@ -1,6 +1,7 @@
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
+using LenovoTray.Services;
 
 namespace LenovoTray.Helpers;
 
@@ -45,18 +46,62 @@ internal static class IconGenerator
 
     /// <summary>
     /// Renders a live battery-level tray icon as a 32×32 <see cref="System.Drawing.Icon"/>.
-    /// The caller must call <see cref="NativeMethods.DestroyIcon"/> on the handle of the
-    /// returned icon when it is no longer needed (before replacing it with a new one).
-    /// Returns a generic battery icon when <paramref name="percent"/> is 0.
+    /// When <paramref name="mode"/> is <see cref="TrayIconMode.Numeric"/> the icon shows a
+    /// large percentage number on a colour-coded background instead of an arc gauge.
+    /// The caller must dispose the returned icon (and call <see cref="NativeMethods.DestroyIcon"/>
+    /// on the GDI handle) when replacing it with a newer one.
     /// </summary>
-    internal static System.Drawing.Icon RenderBatteryIcon(int percent, bool charging)
+    internal static System.Drawing.Icon RenderBatteryIcon(
+        int percent, bool charging, TrayIconMode mode = TrayIconMode.Arc)
     {
-        using var bmp    = RenderBatteryBitmap(32, percent, charging);
-        IntPtr    hIcon  = bmp.GetHicon();
+        using var bmp   = mode == TrayIconMode.Numeric
+                            ? RenderNumericBitmap(32, percent, charging)
+                            : RenderBatteryBitmap(32, percent, charging);
+        IntPtr    hIcon = bmp.GetHicon();
         // Clone copies the icon data into a managed-owned handle; destroy the GDI original.
         var icon = (System.Drawing.Icon)System.Drawing.Icon.FromHandle(hIcon).Clone();
         NativeMethods.DestroyIcon(hIcon);
         return icon;
+    }
+
+    /// <summary>
+    /// Renders a 32×32 tray icon that displays the percentage as a large number on a
+    /// colour-coded rounded-square background (same colour scheme as the arc icon).
+    /// </summary>
+    private static Bitmap RenderNumericBitmap(int size, int percent, bool charging)
+    {
+        var bmp = new Bitmap(size, size, PixelFormat.Format32bppArgb);
+        using var g = Graphics.FromImage(bmp);
+        g.SmoothingMode   = SmoothingMode.AntiAlias;
+        g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+        g.Clear(Color.Transparent);
+
+        // Colour-coded background (same scheme as the arc fill).
+        Color bg = percent switch
+        {
+            > 50 => Color.FromArgb(255, 0x10, 0xB9, 0x81),
+            > 20 => Color.FromArgb(255, 0xFF, 0x8C, 0x00),
+            _    => Color.FromArgb(255, 0xE2, 0x00, 0x1A),
+        };
+        if (charging) bg = Color.FromArgb(255, 0x10, 0xB9, 0x81);
+
+        int margin = Math.Max(1, (int)Math.Round(size * MarginFraction));
+        var rect   = new Rectangle(margin, margin, size - margin * 2 - 1, size - margin * 2 - 1);
+        int radius = Math.Max(2, (int)Math.Round(size * CornerRadiusFraction));
+        using (var bgBrush = new SolidBrush(bg))
+        using (var path    = BuildRoundedRectPath(rect, radius))
+            g.FillPath(bgBrush, path);
+
+        // Large white % number centred in the icon.
+        string label    = percent > 0 ? $"{percent}" : "?";
+        // Scale font smaller for three-digit numbers ("100") so it still fits.
+        float  fontSize = Math.Max(7f, size * (label.Length >= 3 ? 0.27f : 0.34f));
+        using var font  = new Font("Segoe UI", fontSize, System.Drawing.FontStyle.Bold, GraphicsUnit.Pixel);
+        using var brush = new SolidBrush(Color.White);
+        using var sf    = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+        g.DrawString(label, font, brush, new RectangleF(0, 0, size, size), sf);
+
+        return bmp;
     }
 
     // ── Private rendering ─────────────────────────────────────────────────────

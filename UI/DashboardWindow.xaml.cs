@@ -19,9 +19,11 @@ namespace LenovoTray.UI;
 public sealed partial class DashboardWindow : Window
 {
     // Physical pixel dimensions — DPI scaling is handled by the OS (PerMonitorV2 manifest).
-    private const int WindowWidth          = 280;
-    private const int WindowHeight         = 340;
-    private const int WindowHeightSliders  = 430;  // extra ~90 px when threshold sliders are shown
+    // Base heights include the history sparkline and the collapsed settings expander header.
+    private const int WindowWidth         = 280;
+    private const int WindowHeight        = 440;  // base (no sliders, settings collapsed)
+    private const int WindowHeightSliders = 530;  // extra ~90 px when threshold sliders shown
+    private const int SettingsExpandExtra = 175;  // added when settings expander is open
 
     // Arc gauge geometry: 100×100 px canvas, 7-o'clock start (135°), 270° sweep.
     private const double GaugeCx         = 50;
@@ -34,18 +36,22 @@ public sealed partial class DashboardWindow : Window
     private const int EdgeMargin = 12;
 
     private readonly DispatcherTimer _refreshTimer;
+    private readonly App             _app;
 
     // When the popup was last hidden — lets the tray click that auto-dismissed it avoid re-showing.
     private DateTime _hiddenAtUtc = DateTime.MinValue;
 
     // Guards slider ValueChanged handlers from triggering each other recursively.
     private bool _updatingSliders = false;
+    // Guards settings controls from writing back to SettingsService during initialisation.
+    private bool _updatingSettings = false;
 
     /// <summary>Time elapsed since the window was last hidden.</summary>
     public TimeSpan SinceHidden => DateTime.UtcNow - _hiddenAtUtc;
 
-    public DashboardWindow()
+    public DashboardWindow(App app)
     {
+        _app = app;
         InitializeComponent();
         ConfigureWindowChrome();
 
@@ -64,12 +70,15 @@ public sealed partial class DashboardWindow : Window
     /// <summary>Positions the window above the system tray and shows it with fresh data.</summary>
     public void ShowNearTray()
     {
+        // Sync settings controls before the window is visible to avoid a flash.
+        InitSettingsPanel();
+
         // Load data before making the window visible to avoid a "Loading…" flash.
         Refresh();
 
         // Size and position using the initial (base) height; ApplyStatusBadges will resize
         // if the sliders section needs to expand after the background read completes.
-        PlaceWindow(WindowHeight);
+        PlaceWindow(GetCurrentWindowHeight());
 
         AppWindow.Show();
 
@@ -95,6 +104,15 @@ public sealed partial class DashboardWindow : Window
         AppWindow.Move(new Windows.Graphics.PointInt32(
             work.Right  - w - margin,
             work.Bottom - h - margin));
+    }
+
+    private int GetCurrentWindowHeight()
+    {
+        int h = ThresholdSliders.Visibility == Visibility.Visible
+                    ? WindowHeightSliders
+                    : WindowHeight;
+        if (SettingsExpander?.IsExpanded == true) h += SettingsExpandExtra;
+        return h;
     }
 
     /// <summary>Hides the window without destroying it so it can be shown again cheaply.</summary>
@@ -190,12 +208,94 @@ public sealed partial class DashboardWindow : Window
                 int mw when mw > 0 => $"+{mw / 1000.0:F1} W",
                 int mw             => $"-{Math.Abs(mw) / 1000.0:F1} W"
             };
+
+            // Time remaining / time to full.
+            TimeRemainingText.Text = ComputeTimeRemaining(report);
+
+            // History sparkline.
+            UpdateSparkline(pct ?? 0);
         }
         catch
         {
             BatteryPercentText.Text = "--";
             ChargeStatusText.Text   = "Error";
         }
+    }
+
+    // ── Time remaining ────────────────────────────────────────────────────────
+
+    private static string ComputeTimeRemaining(BatteryReport report)
+    {
+        // Need a non-trivial charge rate and valid capacity values.
+        if (report.ChargeRateInMilliwatts is not { } rate || Math.Abs(rate) < 100)
+            return "—";
+        if (report.RemainingCapacityInMilliwattHours is not { } remaining)
+            return "—";
+
+        if (rate > 0 && report.FullChargeCapacityInMilliwattHours is > 0 and { } full)
+        {
+            // Charging: time to reach full.
+            double h = (full - remaining) / (double)rate;
+            return FormatHours(h);
+        }
+        if (rate < 0)
+        {
+            // Discharging: time until empty.
+            double h = remaining / (double)Math.Abs(rate);
+            return FormatHours(h);
+        }
+        return "—";
+    }
+
+    private static string FormatHours(double h)
+    {
+        if (h <= 0 || double.IsInfinity(h) || double.IsNaN(h)) return "—";
+        if (h > 99) return ">99h";
+        var ts = TimeSpan.FromHours(h);
+        return ts.TotalHours >= 1
+            ? $"~{(int)ts.TotalHours}h {ts.Minutes}m"
+            : $"~{ts.Minutes}m";
+    }
+
+    // ── History sparkline ─────────────────────────────────────────────────────
+
+    private void UpdateSparkline(int currentPct)
+    {
+        SparklineCanvas.Children.Clear();
+
+        var samples = BatteryHistoryService.GetWindow(TimeSpan.FromHours(1));
+        if (samples.Length < 2) return;
+
+        // Canvas size is known once the element has been measured; guard against first render.
+        double w = SparklineCanvas.ActualWidth;
+        double h = SparklineCanvas.ActualHeight;
+        if (w < 4 || h < 4) return;
+
+        const double pad = 4;
+        double tMin   = samples[0].At.Ticks;
+        double tRange = Math.Max((double)(samples[^1].At.Ticks - samples[0].At.Ticks), 1);
+
+        var poly = new Microsoft.UI.Xaml.Shapes.Polyline
+        {
+            StrokeThickness = 1.5,
+            StrokeLineJoin  = PenLineJoin.Round,
+            Stroke          = currentPct switch
+            {
+                <= 20 => AppColors.GaugeLowBrush,
+                <= 50 => AppColors.GaugeMedBrush,
+                _     => AppColors.GaugeHighBrush,
+            },
+        };
+
+        foreach (var (at, pct) in samples)
+        {
+            double x = pad + (at.Ticks - tMin) / tRange * (w - pad * 2);
+            // Y axis: 0% at bottom, 100% at top; invert because canvas Y grows downward.
+            double y = (h - pad) - pct / 100.0 * (h - pad * 2);
+            poly.Points.Add(new Point(x, y));
+        }
+
+        SparklineCanvas.Children.Add(poly);
     }
 
     // Called on the UI thread after the background read completes.
@@ -252,7 +352,7 @@ public sealed partial class DashboardWindow : Window
 
         // Resize window so sliders fit without clipping (only when already visible).
         if (AppWindow.IsVisible)
-            PlaceWindow(showSliders ? WindowHeightSliders : WindowHeight);
+            PlaceWindow(GetCurrentWindowHeight());
 
         // ── Smart Standby ─────────────────────────────────────────────────────
         SetFeatureBadge(SmartStandbyBadge, SmartStandbyIndicator, standbyOn);
@@ -316,10 +416,110 @@ public sealed partial class DashboardWindow : Window
                     SmartChargeDetailText.Text = "Error — check driver";
                     return;
                 }
-                // Full Refresh re-reads the service and repaints all badges, ticks, and sliders
-                // in one pass — no need to manually update individual elements here.
+                // Clear the active preset name since the threshold is now custom.
+                SettingsService.Current.ActivePreset = null;
+                SettingsService.Save();
+                // Full Refresh re-reads the service and repaints all badges, ticks, and sliders.
                 Refresh();
             });
+        });
+    }
+
+    // ── Settings panel ────────────────────────────────────────────────────────
+
+    /// <summary>Syncs all settings controls with the current persisted values.</summary>
+    private void InitSettingsPanel()
+    {
+        var s = SettingsService.Current;
+        _updatingSettings = true;
+        LowBatteryToggle.IsOn      = s.LowBatteryWarningEnabled;
+        LowBatteryPctBox.Value     = s.LowBatteryWarningPct;
+        StartupDelayBox.Value      = s.StartupDelaySeconds;
+        NumericIconToggle.IsOn     = s.IconMode == TrayIconMode.Numeric;
+        LowBatteryPctRow.Visibility = s.LowBatteryWarningEnabled
+                                       ? Visibility.Visible
+                                       : Visibility.Collapsed;
+        _updatingSettings = false;
+    }
+
+    private void OnSettingsExpanderSizeChanged(object sender, SizeChangedEventArgs e)
+        => PlaceWindow(GetCurrentWindowHeight());
+
+    private void OnLowBatteryToggled(object sender, RoutedEventArgs e)
+    {
+        if (_updatingSettings) return;
+        var s = SettingsService.Current;
+        s.LowBatteryWarningEnabled  = LowBatteryToggle.IsOn;
+        LowBatteryPctRow.Visibility = s.LowBatteryWarningEnabled
+                                       ? Visibility.Visible
+                                       : Visibility.Collapsed;
+        SettingsService.Save();
+    }
+
+    private void OnLowBatteryPctChanged(NumberBox sender, NumberBoxValueChangedEventArgs e)
+    {
+        if (_updatingSettings || double.IsNaN(e.NewValue)) return;
+        SettingsService.Current.LowBatteryWarningPct = (int)e.NewValue;
+        SettingsService.Save();
+    }
+
+    private void OnStartupDelayChanged(NumberBox sender, NumberBoxValueChangedEventArgs e)
+    {
+        if (_updatingSettings || double.IsNaN(e.NewValue)) return;
+        SettingsService.Current.StartupDelaySeconds = (int)e.NewValue;
+        SettingsService.Save();
+    }
+
+    private void OnNumericIconToggled(object sender, RoutedEventArgs e)
+    {
+        if (_updatingSettings) return;
+        SettingsService.Current.IconMode = NumericIconToggle.IsOn
+                                            ? TrayIconMode.Numeric
+                                            : TrayIconMode.Arc;
+        SettingsService.Save();
+        // Immediately re-render the tray icon so the change is visible without waiting.
+        _app.ForceIconRefresh();
+    }
+
+    private void OnExportSettings(object sender, RoutedEventArgs e)
+    {
+        // Win32 Save dialog (elevation-safe — see NativeMethods). WinRT pickers are unreliable
+        // in this requireAdministrator process.
+        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+        var path = NativeMethods.ShowSaveFileDialog(hwnd, "Export Lenovo Power Tray settings",
+            "LenovoPowerTray-settings.json", "json",
+            "Settings JSON (*.json)|*.json|All files (*.*)|*.*");
+        if (path is null) return;
+        try { SettingsService.Export(path); }
+        catch { /* I/O failure must not crash the popup. */ }
+    }
+
+    private void OnImportSettings(object sender, RoutedEventArgs e)
+    {
+        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+        var path = NativeMethods.ShowOpenFileDialog(hwnd, "Import Lenovo Power Tray settings",
+            "json", "Settings JSON (*.json)|*.json|All files (*.*)|*.*");
+        if (path is null) return;
+
+        if (SettingsService.Import(path))
+        {
+            // Reflect the imported values everywhere they're shown.
+            InitSettingsPanel();
+            Refresh();
+            _app.ForceIconRefresh();
+        }
+    }
+
+    private void OnOpenSettingsFile(object sender, RoutedEventArgs e)
+    {
+        var filePath = SettingsService.FilePath;
+        var dir      = Path.GetDirectoryName(filePath) ?? filePath;
+        var args     = File.Exists(filePath) ? $"/select,\"{filePath}\"" : $"\"{dir}\"";
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+        {
+            FileName        = "explorer.exe",
+            Arguments       = args,
+            UseShellExecute = true,
         });
     }
 

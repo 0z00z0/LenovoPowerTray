@@ -24,13 +24,23 @@ public partial class App : Application
     // Last known battery status — used to detect Charging→Idle transitions for toasts.
     private BatteryStatus _lastBatteryStatus = BatteryStatus.NotPresent;
 
-    // Cached tray icon state; -1 pct = not yet read.
+    // Cached tray icon state; Pct = -1 means not yet read.
     private (int Pct, bool Charging) _lastIconState = (-1, false);
+
+    // Guards the low-battery toast from firing repeatedly during the same discharge.
+    // Reset with 5 % hysteresis so it re-fires on the next dip if the user charges briefly.
+    private bool _lowBatteryWarningFired;
 
     public App() => InitializeComponent();
 
-    protected override void OnLaunched(LaunchActivatedEventArgs args)
+    protected override async void OnLaunched(LaunchActivatedEventArgs args)
     {
+        // Configurable startup delay — keeps the app off the critical sign-in path on
+        // machines where many elevated processes start simultaneously.
+        int delay = SettingsService.Current.StartupDelaySeconds;
+        if (delay > 0)
+            await Task.Delay(TimeSpan.FromSeconds(delay)).ConfigureAwait(true);
+
         _hostWindow = new MainWindow();
         ToastService.Register();
         InitTrayIcon();
@@ -44,7 +54,7 @@ public partial class App : Application
     {
         _trayIcon = (TaskbarIcon)Resources["TrayIcon"];
 
-        // Start with the static red "L" icon; battery arc replaces it on first battery event.
+        // Start with the static red "L" icon; battery arc replaces it on the first battery event.
         var exeDir   = Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
         var iconPath = IconGenerator.GenerateAndSaveTrayIcon(exeDir);
         _trayIcon.Icon = new System.Drawing.Icon(iconPath);
@@ -56,7 +66,7 @@ public partial class App : Application
             new SmartStandbyFeature(),
             new AutoStartFeature(),
         ];
-        _menu = new TrayMenu(features, Shutdown);
+        _menu = new TrayMenu(features, Shutdown, ForceIconRefresh);
         _trayIcon.ContextFlyout     = _menu.Flyout;
         _trayIcon.LeftClickCommand  = new RelayCommand(ToggleDashboard);
         _trayIcon.RightClickCommand = new RelayCommand(() => _menu!.RefreshState());
@@ -89,12 +99,32 @@ public partial class App : Application
 
             bool charging = report.Status is BatteryStatus.Charging or BatteryStatus.Idle;
 
+            // ── Battery history ───────────────────────────────────────────────
+            BatteryHistoryService.Record(pct);
+
             // ── Dynamic tray icon ─────────────────────────────────────────────
             // Only re-render when something meaningful changed (avoids GDI churn every tick).
             if ((pct, charging) != _lastIconState)
             {
                 _lastIconState = (pct, charging);
                 UpdateTrayIcon(pct, charging);
+            }
+
+            // ── Low-battery warning ───────────────────────────────────────────
+            var s = SettingsService.Current;
+            if (s.LowBatteryWarningEnabled &&
+                report.Status == BatteryStatus.Discharging &&
+                pct > 0 &&
+                pct <= s.LowBatteryWarningPct &&
+                !_lowBatteryWarningFired)
+            {
+                _lowBatteryWarningFired = true;
+                ToastService.NotifyLowBattery(pct);
+            }
+            // Reset the guard with hysteresis so it can fire again after a partial charge.
+            else if (pct > s.LowBatteryWarningPct + 5)
+            {
+                _lowBatteryWarningFired = false;
             }
 
             // ── Toast: charging complete ──────────────────────────────────────
@@ -105,6 +135,9 @@ public partial class App : Application
                 var state   = ChargeThresholdService.Read();
                 int stopPct = state is { Enabled: true, Stop: > 0 } ? state.Stop : 100;
                 ToastService.NotifyChargeComplete(stopPct);
+
+                // Travel override: revert to saved thresholds now that charging is complete.
+                TravelOverrideService.OnChargeComplete();
             }
 
             // ── Toast: AC connected ───────────────────────────────────────────
@@ -128,9 +161,10 @@ public partial class App : Application
     {
         try
         {
-            var newIcon  = IconGenerator.RenderBatteryIcon(pct, charging);
-            var oldIcon  = _currentBatteryIcon;
-            _trayIcon!.Icon    = newIcon;
+            var mode    = SettingsService.Current.IconMode;
+            var newIcon = IconGenerator.RenderBatteryIcon(pct, charging, mode);
+            var oldIcon = _currentBatteryIcon;
+            _trayIcon!.Icon     = newIcon;
             _currentBatteryIcon = newIcon;
             oldIcon?.Dispose();
         }
@@ -138,6 +172,16 @@ public partial class App : Application
         {
             // Icon rendering failure is non-fatal.
         }
+    }
+
+    /// <summary>
+    /// Forces an immediate tray icon re-render using the last known battery state.
+    /// Called when the icon mode is toggled from the tray menu or settings panel.
+    /// </summary>
+    internal void ForceIconRefresh()
+    {
+        if (_lastIconState.Pct >= 0)
+            UpdateTrayIcon(_lastIconState.Pct, _lastIconState.Charging);
     }
 
     // ── Update check ──────────────────────────────────────────────────────────
@@ -175,7 +219,7 @@ public partial class App : Application
         // so handlers don't accumulate on every click.
         if (_dashboard is null)
         {
-            _dashboard = new DashboardWindow();
+            _dashboard = new DashboardWindow(this);
             _dashboard.Closed += (_, _) => _dashboard = null;
         }
 

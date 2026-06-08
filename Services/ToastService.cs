@@ -59,6 +59,22 @@ internal static class ToastService
         }
     }
 
+    public static void NotifyLowBattery(int pct)
+    {
+        try
+        {
+            var builder = new AppNotificationBuilder()
+                .AddText("Low battery")
+                .AddText($"Battery at {pct}% — connect AC power");
+
+            AppNotificationManager.Default.Show(builder.BuildNotification());
+        }
+        catch
+        {
+            // Toast failure must not crash the app.
+        }
+    }
+
     public static void Cleanup()
     {
         try

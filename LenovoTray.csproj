@@ -4,16 +4,16 @@
     <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
     <RootNamespace>LenovoTray</RootNamespace>
-    <Version>1.0.0</Version>
+    <Version>1.0.1</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
 
     <!-- Identity / packaging metadata -->
     <AssemblyTitle>Lenovo Power Tray</AssemblyTitle>
     <Product>Lenovo Power Tray</Product>
     <Description>Smart Charge &amp; Smart Standby tray app for ThinkPad — direct access to power settings without opening Lenovo Vantage.</Description>
-    <Authors>ZeroZero software</Authors>
-    <Company>ZeroZero software</Company>
-    <Copyright>Copyright © 2026 ZeroZero software</Copyright>
+    <Authors>ZeroZero Software</Authors>
+    <Company>ZeroZero Software</Company>
+    <Copyright>Copyright © 2026 ZeroZero Software</Copyright>
     <RepositoryUrl>https://github.com/0z00z0/LenovoPowerTray</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
 

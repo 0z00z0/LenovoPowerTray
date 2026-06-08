@@ -66,3 +66,9 @@ native/*.exp
 native/pwrmgr_c.c
 native/pwrmgr_s.c
 native/pwrmgr_h.h
+
+# Local task tracking — not for the repo.
+TODO.md
+
+# Stray Explorer shortcut that lands in the folder — not part of the project.
+Projects.lnk

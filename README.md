@@ -9,7 +9,28 @@ A lightweight Windows **system-tray app** for Lenovo ThinkPad laptops (built and
 
 Left-click the tray icon for a battery dashboard (arc gauge with live % and charge-rate, threshold
 tick markers, adjustable start/stop sliders); right-click for quick toggles plus a launch-at-startup
-option. The tray icon itself shows a live battery-level arc, colour-coded green/orange/red.
+option. The tray icon itself shows a live battery-level arc, colour-coded green/orange/red — or,
+optionally, the battery percentage as a number.
+
+### Features
+
+- **Threshold presets** — named charging profiles (**Daily** 60–80%, **Travel** 80–100%) from the
+  tray right-click **Presets** submenu, applied via the Lenovo Power Manager.
+- **Charge to 100% once (travel override)** — a tray menu item that temporarily lifts the charge
+  threshold for one cycle, then auto-restores it once the battery reaches full. Survives an app
+  restart mid-charge.
+- **Custom low-battery warning** — a toast at a user-set battery % while discharging (Settings).
+- **Time remaining / time to full** — the dashboard shows estimated time-to-full (charging) or
+  time-remaining (discharging).
+- **Battery % history sparkline** — a small graph of recent battery level in the dashboard.
+- **Configurable startup delay** — wait N seconds before the app initialises at sign-in (Settings).
+- **Numeric % tray icon** — show the battery percentage as a number instead of the arc gauge
+  (toggle in the tray menu and dashboard).
+- **Settings persistence + Export/Import** — settings are stored as human-readable JSON at
+  `%AppData%\LenovoPowerTray\settings.json`. The dashboard's **Settings** section has **Export…** /
+  **Import…** buttons (Win32 file dialogs, which work in this elevated app) and an **Open file**
+  link. Settings are portable across machines by copying this file; automatic cloud sync is not yet
+  implemented.
 
 > ### ⚠️ 100% vibe coded
 > This project was written **entirely by an AI assistant ("vibe coded")** through natural-language
@@ -148,6 +169,6 @@ Jordan Russell & Martijn Laan (free, with attribution under its license), and di
 
 ## License
 
-[MIT](LICENSE) © ZeroZero software ([0z0.xyz](https://0z0.xyz)) — you are free to use, modify,
+[MIT](LICENSE) © ZeroZero Software ([0z0.xyz](https://0z0.xyz)) — you are free to use, modify,
 fork, and redistribute, including commercially, **provided you keep the copyright and license
 notice**. See [LICENSE](LICENSE) for the full text.

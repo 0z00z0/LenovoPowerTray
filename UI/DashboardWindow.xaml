@@ -14,10 +14,12 @@
     <!-- No fixed Width: the grid fills the window, which is sized in code per monitor DPI. -->
     <Grid Padding="20,16,20,20">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>  <!-- 0: Header -->
+            <RowDefinition Height="Auto"/>  <!-- 1: Gauge + stats -->
+            <RowDefinition Height="Auto"/>  <!-- 2: History sparkline -->
+            <RowDefinition Height="Auto"/>  <!-- 3: Separator -->
+            <RowDefinition Height="Auto"/>  <!-- 4: Status badges -->
+            <RowDefinition Height="Auto"/>  <!-- 5: Settings expander -->
         </Grid.RowDefinitions>
 
         <!-- Header -->
@@ -29,7 +31,7 @@
                    Margin="0,0,0,14"/>
 
         <!-- Battery gauge section: gauge left, stats right filling remaining width -->
-        <Grid Grid.Row="1" Margin="0,0,0,16">
+        <Grid Grid.Row="1" Margin="0,0,0,12">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
@@ -109,17 +111,37 @@
                                FontSize="13"
                                Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
                 </StackPanel>
+                <StackPanel Spacing="2">
+                    <TextBlock Text="TIME"
+                               FontSize="10"
+                               FontWeight="SemiBold"
+                               Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                               CharacterSpacing="100"/>
+                    <TextBlock x:Name="TimeRemainingText"
+                               Text="—"
+                               FontSize="13"
+                               Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
+                </StackPanel>
             </StackPanel>
         </Grid>
 
-        <!-- Separator -->
+        <!-- Battery history sparkline -->
         <Border Grid.Row="2"
+                Margin="0,0,0,12"
+                Height="44"
+                CornerRadius="5"
+                Background="{ThemeResource ControlFillColorDefaultBrush}">
+            <Canvas x:Name="SparklineCanvas"/>
+        </Border>
+
+        <!-- Separator -->
+        <Border Grid.Row="3"
                 Height="1"
                 Background="{ThemeResource DividerStrokeColorDefaultBrush}"
                 Margin="0,0,0,12"/>
 
         <!-- Status badges -->
-        <StackPanel Grid.Row="3" Spacing="8">
+        <StackPanel Grid.Row="4" Spacing="8">
 
             <!-- Smart Charge badge -->
             <Border x:Name="SmartChargeBadge"
@@ -230,5 +252,109 @@
                 </Grid>
             </Border>
         </StackPanel>
+
+        <!-- Settings expander -->
+        <Expander x:Name="SettingsExpander"
+                  Grid.Row="5"
+                  Header="Settings"
+                  HorizontalAlignment="Stretch"
+                  HorizontalContentAlignment="Stretch"
+                  Margin="0,10,0,0"
+                  SizeChanged="OnSettingsExpanderSizeChanged">
+            <StackPanel Spacing="10" Padding="2,6,2,4">
+
+                <!-- Low-battery warning toggle -->
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" Spacing="1" VerticalAlignment="Center">
+                        <TextBlock Text="Low battery warning"
+                                   FontSize="11"
+                                   Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
+                        <TextBlock Text="Toast when battery falls below threshold"
+                                   FontSize="10"
+                                   Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
+                    </StackPanel>
+                    <ToggleSwitch Grid.Column="1"
+                                  x:Name="LowBatteryToggle"
+                                  MinWidth="0"
+                                  Toggled="OnLowBatteryToggled"/>
+                </Grid>
+
+                <!-- Low-battery % threshold (visible only when toggle is on) -->
+                <Grid x:Name="LowBatteryPctRow">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="76"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Warn at"
+                               FontSize="11"
+                               VerticalAlignment="Center"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    <NumberBox Grid.Column="1"
+                               x:Name="LowBatteryPctBox"
+                               Minimum="5" Maximum="50"
+                               SpinButtonPlacementMode="Compact"
+                               SmallChange="1"
+                               FontSize="11"
+                               ValueChanged="OnLowBatteryPctChanged"/>
+                </Grid>
+
+                <!-- Startup delay -->
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="76"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Startup delay (seconds)"
+                               FontSize="11"
+                               VerticalAlignment="Center"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    <NumberBox Grid.Column="1"
+                               x:Name="StartupDelayBox"
+                               Minimum="0" Maximum="120"
+                               SpinButtonPlacementMode="Compact"
+                               SmallChange="5"
+                               FontSize="11"
+                               ValueChanged="OnStartupDelayChanged"/>
+                </Grid>
+
+                <!-- Numeric icon toggle -->
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Numeric % tray icon"
+                               FontSize="11"
+                               VerticalAlignment="Center"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    <ToggleSwitch Grid.Column="1"
+                                  x:Name="NumericIconToggle"
+                                  MinWidth="0"
+                                  Toggled="OnNumericIconToggled"/>
+                </Grid>
+
+                <!-- Export / Import / open settings file -->
+                <StackPanel Orientation="Horizontal" Spacing="14">
+                    <HyperlinkButton Content="Export…"
+                                     FontSize="11"
+                                     Padding="0"
+                                     Click="OnExportSettings"/>
+                    <HyperlinkButton Content="Import…"
+                                     FontSize="11"
+                                     Padding="0"
+                                     Click="OnImportSettings"/>
+                    <HyperlinkButton Content="Open file  ↗"
+                                     FontSize="11"
+                                     Padding="0"
+                                     Click="OnOpenSettingsFile"/>
+                </StackPanel>
+
+            </StackPanel>
+        </Expander>
+
     </Grid>
 </Window>

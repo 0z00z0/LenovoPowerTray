@@ -31,7 +31,14 @@ dotnet run
 
 ### Context menu items
 - **Smart Charge** — enable/disable the charge threshold  
+- **Presets** — submenu of named threshold profiles: **Daily** (60–80 %) and **Travel** (80–100 %).
+  Selecting one enables Smart Charge and applies those thresholds; the active preset is checkmarked  
+- **⚡ Charge to 100 % once** — travel override: saves the current threshold, disables it so the
+  battery charges fully, then auto-restores the saved threshold on the next Charging → full
+  transition. While active the item reads **✕ Cancel charge override**; the override state persists
+  across an app restart  
 - **Smart Standby** — start/stop the `LenovoSmartStandby` service  
+- **Numeric % icon** — toggle the tray icon between the arc gauge and a numeric percentage  
 - **Launch at startup** — add/remove the Task Scheduler auto-start entry  
 - **Exit**
 
@@ -42,13 +49,44 @@ Appears bottom-right above the taskbar.  Closes on focus loss.  Refreshes every 
 - Amber tick marks on the arc at the Smart Charge start% and stop% positions (visible when Smart
   Charge is enabled with valid thresholds)
 - Power source (AC / Battery) and charge/drain rate in watts
+- **TIME stat** — time-to-full when charging, time-remaining when discharging; shows **—** when the
+  charge rate is negligible
+- **Battery % history sparkline** — a 1-hour mini-graph of battery level, colour-coded like the
+  gauge. Session-only (kept in memory, not persisted across restarts)
 - **Smart Charge badge** — shows current thresholds; expands to reveal Start/Stop sliders when
   Smart Charge is enabled. Sliders are constrained (≥ 5% gap); **Apply** writes the new thresholds
   immediately via `LenSetChargeThreshold`
 - **Smart Standby badge** — shows service running state
+- **Settings expander** — a collapsible section for app options (see [Settings](#settings))
 
 The tray icon is a live battery-level arc (same colour scheme as the gauge), updated on every
-`Battery.ReportUpdated` event.
+`Battery.ReportUpdated` event. It can be switched to a **numeric percentage** instead of the arc
+via the **Numeric % icon** tray toggle or the dashboard Settings.
+
+A **custom low-battery warning** raises a toast when the battery drops to a configurable % while
+discharging. It has 5 % hysteresis so it won't repeat-fire as the level hovers around the threshold.
+Configured in Settings (on/off toggle + threshold).
+
+## Settings
+
+Settings persist to `%AppData%\LenovoPowerTray\settings.json` — a roaming, human-readable JSON file.
+
+The dashboard's collapsible **Settings** expander exposes:
+
+| Setting | Effect |
+|---------|--------|
+| **Low-battery warning** | On/off toggle + threshold % for the discharge toast (5 % hysteresis) |
+| **Startup delay** | Seconds to wait before the app initialises at sign-in — keeps it off the critical path when many elevated apps start at once |
+| **Numeric % icon** | Render the tray icon as a number instead of the arc gauge |
+
+It also offers:
+
+- **Export… / Import…** — back up or load the settings file. These use classic Win32 file dialogs
+  because the app runs elevated, where the WinRT pickers are unreliable
+- **Open file** — reveals `settings.json` in Explorer
+
+The file is portable by copy across machines. Automatic cloud sync is not yet implemented (a planned
+future option).
 
 ## Building
 
@@ -87,7 +125,7 @@ cd installer
 ## Code signing
 
 The app is Authenticode-signed so the UAC elevation prompt shows a verified
-publisher (`ZeroZero software`) instead of *"Unknown Publisher"*.
+publisher (`ZeroZero Software`) instead of *"Unknown Publisher"*.
 
 **One-time setup** — create and trust a self-signed code-signing certificate:
 
@@ -116,7 +154,7 @@ Get-AuthenticodeSignature .\bin\Release\net10.0-windows10.0.26100.0\win-x64\Leno
 - The certificate's private key lives only in the Windows cert store — no `.pfx`
   is written to the project folder, so nothing secret is committed.
 - To use a real CA-issued certificate, import it into `Cert:\CurrentUser\My` with
-  subject `CN=ZeroZero software` (or pass `-Subject` to `scripts\sign.ps1`); signing picks it up
+  subject `CN=ZeroZero Software` (or pass `-Subject` to `scripts\sign.ps1`); signing picks it up
   by subject automatically — no other change needed.
 - A self-signed cert is trusted only on machines where `-Setup` has been run.
   Other machines will still show "Unknown Publisher" unless the public cert is
