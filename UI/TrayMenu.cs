@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Reflection;
 using Microsoft.UI.Xaml.Controls;
 using LenovoTray.Features;
 using LenovoTray.Helpers;
@@ -23,6 +25,11 @@ internal sealed class TrayMenu
     private MenuFlyoutItem?       _updateItem;
     private MenuFlyoutItem?       _travelItem;
     private ToggleMenuFlyoutItem? _iconModeItem;
+
+    // Settings submenu state (radio-style items synced in RefreshState).
+    private ToggleMenuFlyoutItem? _lowBattEnabledItem;
+    private readonly List<(ToggleMenuFlyoutItem Item, int Pct)>     _lowBattPctItems    = [];
+    private readonly List<(ToggleMenuFlyoutItem Item, int Seconds)> _startupDelayItems  = [];
 
     private readonly Action _onIconModeChanged;
 
@@ -59,8 +66,10 @@ internal sealed class TrayMenu
             }
         }
 
-        // ── App settings ─────────────────────────────────────────────────────
+        // ── Settings submenu ─────────────────────────────────────────────────
         Flyout.Items.Add(new MenuFlyoutSeparator());
+
+        var settingsMenu = new MenuFlyoutSubItem { Text = "Settings" };
 
         _iconModeItem = new ToggleMenuFlyoutItem
         {
@@ -68,14 +77,24 @@ internal sealed class TrayMenu
             IsChecked = SettingsService.Current.IconMode == TrayIconMode.Numeric,
             Command   = new RelayCommand(ToggleIconMode),
         };
-        Flyout.Items.Add(_iconModeItem);
-
-        Flyout.Items.Add(new MenuFlyoutItem
+        settingsMenu.Items.Add(_iconModeItem);
+        settingsMenu.Items.Add(BuildLowBatteryMenu());
+        settingsMenu.Items.Add(BuildStartupDelayMenu());
+        settingsMenu.Items.Add(new MenuFlyoutSeparator());
+        settingsMenu.Items.Add(new MenuFlyoutItem { Text = "Export settings…", Command = new RelayCommand(ExportSettings) });
+        settingsMenu.Items.Add(new MenuFlyoutItem { Text = "Import settings…", Command = new RelayCommand(ImportSettings) });
+        settingsMenu.Items.Add(new MenuFlyoutItem { Text = "Open settings file", Command = new RelayCommand(OpenSettingsFile) });
+        settingsMenu.Items.Add(new MenuFlyoutSeparator());
+        settingsMenu.Items.Add(new MenuFlyoutItem
         {
-            Text    = "Open settings file",
-            Command = new RelayCommand(OpenSettingsFile),
+            Text    = "Check for updates",
+            Command = new RelayCommand(() => _ = CheckForUpdatesAsync()),
         });
+        Flyout.Items.Add(settingsMenu);
 
+        // ── About / Exit ──────────────────────────────────────────────────────
+        Flyout.Items.Add(new MenuFlyoutSeparator());
+        Flyout.Items.Add(new MenuFlyoutItem { Text = "About…", Command = new RelayCommand(ShowAbout) });
         Flyout.Items.Add(new MenuFlyoutSeparator());
         Flyout.Items.Add(new MenuFlyoutItem { Text = "Exit", Command = new RelayCommand(onExit) });
 
@@ -131,6 +150,15 @@ internal sealed class TrayMenu
         // Icon mode toggle.
         if (_iconModeItem is not null)
             _iconModeItem.IsChecked = SettingsService.Current.IconMode == TrayIconMode.Numeric;
+
+        // Settings submenu radio-style items.
+        var s = SettingsService.Current;
+        if (_lowBattEnabledItem is not null)
+            _lowBattEnabledItem.IsChecked = s.LowBatteryWarningEnabled;
+        foreach (var (item, pct) in _lowBattPctItems)
+            item.IsChecked = pct == s.LowBatteryWarningPct;
+        foreach (var (item, secs) in _startupDelayItems)
+            item.IsChecked = secs == s.StartupDelaySeconds;
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
@@ -184,6 +212,156 @@ internal sealed class TrayMenu
         s.IconMode = s.IconMode == TrayIconMode.Arc ? TrayIconMode.Numeric : TrayIconMode.Arc;
         SettingsService.Save();
         _onIconModeChanged();
+    }
+
+    // ── Settings submenus (low-battery warning, startup delay, export/import) ──
+
+    private MenuFlyoutSubItem BuildLowBatteryMenu()
+    {
+        var sub = new MenuFlyoutSubItem { Text = "Low battery warning" };
+
+        _lowBattEnabledItem = new ToggleMenuFlyoutItem
+        {
+            Text      = "Enabled",
+            IsChecked = SettingsService.Current.LowBatteryWarningEnabled,
+            Command   = new RelayCommand(ToggleLowBatteryEnabled),
+        };
+        sub.Items.Add(_lowBattEnabledItem);
+        sub.Items.Add(new MenuFlyoutSeparator());
+
+        foreach (var pct in new[] { 10, 15, 20, 25, 30 })
+        {
+            var p    = pct; // capture
+            var item = new ToggleMenuFlyoutItem
+            {
+                Text      = $"Warn at {p}%",
+                IsChecked = SettingsService.Current.LowBatteryWarningPct == p,
+                Command   = new RelayCommand(() => SetLowBatteryPct(p)),
+            };
+            _lowBattPctItems.Add((item, p));
+            sub.Items.Add(item);
+        }
+        return sub;
+    }
+
+    private MenuFlyoutSubItem BuildStartupDelayMenu()
+    {
+        var sub = new MenuFlyoutSubItem { Text = "Startup delay" };
+        foreach (var (label, secs) in new[] { ("Off", 0), ("5 seconds", 5), ("10 seconds", 10), ("30 seconds", 30), ("60 seconds", 60) })
+        {
+            var s    = secs; // capture
+            var item = new ToggleMenuFlyoutItem
+            {
+                Text      = label,
+                IsChecked = SettingsService.Current.StartupDelaySeconds == s,
+                Command   = new RelayCommand(() => SetStartupDelay(s)),
+            };
+            _startupDelayItems.Add((item, s));
+            sub.Items.Add(item);
+        }
+        return sub;
+    }
+
+    private static void ToggleLowBatteryEnabled()
+    {
+        SettingsService.Current.LowBatteryWarningEnabled = !SettingsService.Current.LowBatteryWarningEnabled;
+        SettingsService.Save();
+    }
+
+    private static void SetLowBatteryPct(int pct)
+    {
+        SettingsService.Current.LowBatteryWarningPct     = pct;
+        SettingsService.Current.LowBatteryWarningEnabled = true; // choosing a level implies "on"
+        SettingsService.Save();
+    }
+
+    private static void SetStartupDelay(int seconds)
+    {
+        SettingsService.Current.StartupDelaySeconds = seconds;
+        SettingsService.Save();
+    }
+
+    private void ExportSettings()
+    {
+        // No owner window needed — the tray menu has no HWND; Win32 dialogs accept NULL owner.
+        var path = NativeMethods.ShowSaveFileDialog(IntPtr.Zero, "Export Lenovo Power Tray settings",
+            "LenovoPowerTray-settings.json", "json",
+            "Settings JSON (*.json)|*.json|All files (*.*)|*.*");
+        if (path is null) return;
+        try
+        {
+            SettingsService.Export(path);
+            NativeMethods.Info("Settings exported.", AppName);
+        }
+        catch (Exception ex)
+        {
+            NativeMethods.Warn($"Export failed:\n{ex.Message}", AppName);
+        }
+    }
+
+    private void ImportSettings()
+    {
+        var path = NativeMethods.ShowOpenFileDialog(IntPtr.Zero, "Import Lenovo Power Tray settings",
+            "json", "Settings JSON (*.json)|*.json|All files (*.*)|*.*");
+        if (path is null) return;
+
+        if (SettingsService.Import(path))
+        {
+            _onIconModeChanged(); // imported icon mode takes effect immediately
+            RefreshState();       // resync the menu check marks
+            NativeMethods.Info("Settings imported.", AppName);
+        }
+        else
+        {
+            NativeMethods.Warn("Could not import settings — the file is missing or invalid.", AppName);
+        }
+    }
+
+    // ── About / updates ─────────────────────────────────────────────────────
+
+    private const string AppName   = "Lenovo Power Tray";
+    private const string Publisher = "ZeroZero Software";
+    private const string RepoUrl   = "https://github.com/0z00z0/LenovoPowerTray";
+
+    private static void ShowAbout()
+    {
+        var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "—";
+        if (NativeMethods.Confirm(
+                $"{AppName}\nVersion {version}\n\n" +
+                $"Publisher:  {Publisher}\n" +
+                $"License:    MIT\n\n" +
+                "Open the GitHub page?",
+                $"About {AppName}"))
+            Process.Start(new ProcessStartInfo(RepoUrl) { UseShellExecute = true });
+    }
+
+    private static async Task CheckForUpdatesAsync()
+    {
+        var outcome = await UpdateCheckService.CheckNowAsync().ConfigureAwait(false);
+        var running = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "unknown";
+
+        switch (outcome.Status)
+        {
+            case UpdateCheckService.UpdateStatus.Available:
+                if (NativeMethods.Confirm(
+                        $"A new version is available: v{outcome.LatestVersion}\n" +
+                        $"You have v{running}.\n\nOpen the releases page?",
+                        AppName))
+                    Process.Start(new ProcessStartInfo(outcome.ReleaseUrl) { UseShellExecute = true });
+                break;
+
+            case UpdateCheckService.UpdateStatus.UpToDate:
+                NativeMethods.Info($"You're on the latest version (v{running}).", AppName);
+                break;
+
+            case UpdateCheckService.UpdateStatus.NoReleases:
+                NativeMethods.Info("No releases have been published yet.", AppName);
+                break;
+
+            default:
+                NativeMethods.Warn("Could not check for updates.\nCheck your internet connection.", AppName);
+                break;
+        }
     }
 
     private static void OpenSettingsFile()

@@ -11,15 +11,16 @@
         <MicaBackdrop Kind="BaseAlt" />
     </Window.SystemBackdrop>
 
-    <!-- No fixed Width: the grid fills the window, which is sized in code per monitor DPI. -->
-    <Grid Padding="20,16,20,20">
+    <!-- No fixed Width: the grid fills the window, which is sized in code per monitor DPI.
+         The window height is measured from this grid (PlaceWindow), so rows can appear/disappear
+         without any hard-coded height constants. -->
+    <Grid x:Name="RootGrid" Padding="20,16,20,20">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>  <!-- 0: Header -->
             <RowDefinition Height="Auto"/>  <!-- 1: Gauge + stats -->
             <RowDefinition Height="Auto"/>  <!-- 2: History sparkline -->
             <RowDefinition Height="Auto"/>  <!-- 3: Separator -->
             <RowDefinition Height="Auto"/>  <!-- 4: Status badges -->
-            <RowDefinition Height="Auto"/>  <!-- 5: Settings expander -->
         </Grid.RowDefinitions>
 
         <!-- Header -->
@@ -71,17 +72,19 @@
                           Visibility="Collapsed"
                           Opacity="0.9"/>
                 </Canvas>
-                <!-- Percentage text in center -->
-                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                <!-- Percentage + a compact status glyph in the centre. The glyph (▲ charging /
+                     ● idle / ▼ discharging) replaces the old status word, which was too wide and
+                     touched the arc. Colour conveys state and is set in code. -->
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="-2">
                     <TextBlock x:Name="BatteryPercentText"
                                Text="--"
-                               FontSize="24"
+                               FontSize="23"
                                FontWeight="Bold"
                                HorizontalAlignment="Center"
                                Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
-                    <TextBlock x:Name="ChargeStatusText"
-                               Text="Loading"
-                               FontSize="10"
+                    <TextBlock x:Name="StatusGlyph"
+                               Text="●"
+                               FontSize="12"
                                HorizontalAlignment="Center"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                 </StackPanel>
@@ -125,13 +128,32 @@
             </StackPanel>
         </Grid>
 
-        <!-- Battery history sparkline -->
+        <!-- Battery history sparkline with a time scale along the bottom -->
         <Border Grid.Row="2"
                 Margin="0,0,0,12"
-                Height="44"
+                Height="56"
                 CornerRadius="5"
                 Background="{ThemeResource ControlFillColorDefaultBrush}">
-            <Canvas x:Name="SparklineCanvas"/>
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Canvas x:Name="SparklineCanvas" Grid.Row="0"/>
+                <!-- Time axis: left = span of the visible history, right = now. -->
+                <Grid Grid.Row="1" Margin="7,0,7,3">
+                    <TextBlock x:Name="SparklineStartLabel"
+                               Text="—"
+                               FontSize="9"
+                               HorizontalAlignment="Left"
+                               Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
+                    <TextBlock x:Name="SparklineEndLabel"
+                               Text="now"
+                               FontSize="9"
+                               HorizontalAlignment="Right"
+                               Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
+                </Grid>
+            </Grid>
         </Border>
 
         <!-- Separator -->
@@ -186,8 +208,10 @@
                             <TextBlock Grid.Column="0" Text="Start"
                                        FontSize="11" VerticalAlignment="Center"
                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            <!-- Min/Max/StepFrequency set in code-behind (ConfigureSliderRanges):
+                                 assigning RangeBase.Minimum via XAML throws a XamlParseException
+                                 on this Windows App SDK build. -->
                             <Slider Grid.Column="1" x:Name="StartSlider"
-                                    Minimum="5" Maximum="95" StepFrequency="5"
                                     IsThumbToolTipEnabled="False"
                                     ValueChanged="OnStartSliderChanged"/>
                             <TextBlock Grid.Column="2" x:Name="StartValueText"
@@ -206,7 +230,6 @@
                                        FontSize="11" VerticalAlignment="Center"
                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                             <Slider Grid.Column="1" x:Name="StopSlider"
-                                    Minimum="10" Maximum="100" StepFrequency="5"
                                     IsThumbToolTipEnabled="False"
                                     ValueChanged="OnStopSliderChanged"/>
                             <TextBlock Grid.Column="2" x:Name="StopValueText"
@@ -222,6 +245,18 @@
                                 Margin="0,4,0,0"
                                 Click="OnApplyThresholds"/>
                     </StackPanel>
+
+                    <!-- One-shot "charge to 100% once" (travel override). Visible whenever Smart
+                         Charge is capable so it can also be cancelled while active. -->
+                    <Button x:Name="TravelOverrideButton"
+                            Content="⚡  Charge to 100 % once"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Center"
+                            FontSize="11"
+                            Padding="8,4"
+                            Margin="0,8,0,0"
+                            Visibility="Collapsed"
+                            Click="OnTravelOverrideButton"/>
                 </StackPanel>
             </Border>
 
@@ -252,117 +287,6 @@
                 </Grid>
             </Border>
         </StackPanel>
-
-        <!-- Settings expander -->
-        <Expander x:Name="SettingsExpander"
-                  Grid.Row="5"
-                  Header="Settings"
-                  HorizontalAlignment="Stretch"
-                  HorizontalContentAlignment="Stretch"
-                  Margin="0,10,0,0"
-                  SizeChanged="OnSettingsExpanderSizeChanged">
-            <StackPanel Spacing="10" Padding="2,6,2,4">
-
-                <!-- Low-battery warning toggle -->
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <StackPanel Grid.Column="0" Spacing="1" VerticalAlignment="Center">
-                        <TextBlock Text="Low battery warning"
-                                   FontSize="11"
-                                   Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
-                        <TextBlock Text="Toast when battery falls below threshold"
-                                   FontSize="10"
-                                   Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
-                    </StackPanel>
-                    <ToggleSwitch Grid.Column="1"
-                                  x:Name="LowBatteryToggle"
-                                  MinWidth="0"
-                                  Toggled="OnLowBatteryToggled"/>
-                </Grid>
-
-                <!-- Low-battery % threshold (visible only when toggle is on) -->
-                <Grid x:Name="LowBatteryPctRow">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="52"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="40"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="Warn at"
-                               FontSize="11"
-                               VerticalAlignment="Center"
-                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                    <Slider Grid.Column="1"
-                            x:Name="LowBatteryPctSlider"
-                            Minimum="5" Maximum="50" StepFrequency="1"
-                            IsThumbToolTipEnabled="False"
-                            VerticalAlignment="Center"
-                            ValueChanged="OnLowBatteryPctChanged"/>
-                    <TextBlock Grid.Column="2" x:Name="LowBatteryPctValueText"
-                               FontSize="11" VerticalAlignment="Center"
-                               HorizontalAlignment="Right"
-                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                </Grid>
-
-                <!-- Startup delay -->
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="78"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="40"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="Startup delay"
-                               FontSize="11"
-                               VerticalAlignment="Center"
-                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                    <Slider Grid.Column="1"
-                            x:Name="StartupDelaySlider"
-                            Minimum="0" Maximum="120" StepFrequency="5"
-                            IsThumbToolTipEnabled="False"
-                            VerticalAlignment="Center"
-                            ValueChanged="OnStartupDelayChanged"/>
-                    <TextBlock Grid.Column="2" x:Name="StartupDelayValueText"
-                               FontSize="11" VerticalAlignment="Center"
-                               HorizontalAlignment="Right"
-                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                </Grid>
-
-                <!-- Numeric icon toggle -->
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Text="Numeric % tray icon"
-                               FontSize="11"
-                               VerticalAlignment="Center"
-                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                    <ToggleSwitch Grid.Column="1"
-                                  x:Name="NumericIconToggle"
-                                  MinWidth="0"
-                                  Toggled="OnNumericIconToggled"/>
-                </Grid>
-
-                <!-- Export / Import / open settings file -->
-                <StackPanel Orientation="Horizontal" Spacing="14">
-                    <HyperlinkButton Content="Export…"
-                                     FontSize="11"
-                                     Padding="0"
-                                     Click="OnExportSettings"/>
-                    <HyperlinkButton Content="Import…"
-                                     FontSize="11"
-                                     Padding="0"
-                                     Click="OnImportSettings"/>
-                    <HyperlinkButton Content="Open file  ↗"
-                                     FontSize="11"
-                                     Padding="0"
-                                     Click="OnOpenSettingsFile"/>
-                </StackPanel>
-
-            </StackPanel>
-        </Expander>
 
     </Grid>
 </Window>

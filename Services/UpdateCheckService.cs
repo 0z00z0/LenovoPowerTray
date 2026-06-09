@@ -23,6 +23,57 @@ internal static class UpdateCheckService
     /// </summary>
     public static string? LatestVersion { get; private set; }
 
+    private const string ReleasesPageUrl = "https://github.com/0z00z0/LenovoPowerTray/releases";
+
+    public enum UpdateStatus { UpToDate, Available, NoReleases, Error }
+
+    /// <summary>Result of an on-demand "Check for updates" request.</summary>
+    public readonly record struct CheckOutcome(UpdateStatus Status, string? LatestVersion, string ReleaseUrl);
+
+    /// <summary>
+    /// On-demand update check that reports every outcome (up-to-date / available / no releases /
+    /// error) so a menu action can show a result either way. Never throws.
+    /// </summary>
+    public static async Task<CheckOutcome> CheckNowAsync()
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(
+                HttpMethod.Get,
+                "https://api.github.com/repos/0z00z0/LenovoPowerTray/releases/latest");
+            request.Headers.UserAgent.ParseAdd("LenovoPowerTray/1.0");
+
+            using var response = await _httpClient.SendAsync(request).ConfigureAwait(false);
+
+            // GitHub returns 404 when a repo has tags but no published releases yet.
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                return new(UpdateStatus.NoReleases, null, ReleasesPageUrl);
+
+            response.EnsureSuccessStatusCode();
+
+            var json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            var releaseUrl = root.TryGetProperty("html_url", out var h)
+                ? h.GetString() ?? ReleasesPageUrl : ReleasesPageUrl;
+
+            if (!root.TryGetProperty("tag_name", out var tagEl) ||
+                tagEl.GetString() is not { Length: > 0 } tag ||
+                !Version.TryParse(tag.TrimStart('v'), out var remote))
+                return new(UpdateStatus.Error, null, releaseUrl);
+
+            LatestVersion = tag.TrimStart('v');
+            return remote > CurrentVersion
+                ? new(UpdateStatus.Available, LatestVersion, releaseUrl)
+                : new(UpdateStatus.UpToDate, CurrentVersion.ToString(3), releaseUrl);
+        }
+        catch
+        {
+            return new(UpdateStatus.Error, null, ReleasesPageUrl);
+        }
+    }
+
     /// <summary>
     /// Performs a single update check against the GitHub releases API.
     /// Invokes <paramref name="onUpdateAvailable"/> with the new version string if a newer

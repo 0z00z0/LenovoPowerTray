@@ -16,6 +16,14 @@ internal static class AppColors
     internal static readonly Color Green       = Color.FromArgb(255, 0x10, 0xB9, 0x81);
     internal static readonly Color Orange      = Color.FromArgb(255, 0xFF, 0x8C, 0x00);
     internal static readonly Color Grey        = Color.FromArgb(255, 0x9E, 0x9E, 0x9E);
+    internal static readonly Color Teal        = Color.FromArgb(255, 0x27, 0xE0, 0xC8);  // brand teal
+    internal static readonly Color Amber       = Color.FromArgb(255, 0xD8, 0xA6, 0x57);  // brand amber
+
+    // ── Battery status glyph (gauge centre) ─────────────────────────────────────
+    internal static readonly SolidColorBrush StatusChargingBrush    = new(Green);   // charging  ▲
+    internal static readonly SolidColorBrush StatusIdleBrush        = new(Teal);    // full/idle ●
+    internal static readonly SolidColorBrush StatusDischargingBrush = new(Amber);   // draining  ▼
+    internal static readonly SolidColorBrush StatusUnknownBrush     = new(Grey);    // none / —
 
     // ── Badge backgrounds (semi-transparent fills) ──────────────────────────────
     internal static readonly SolidColorBrush BadgeActiveBrush   = new(Color.FromArgb(20, 0x10, 0xB9, 0x81));

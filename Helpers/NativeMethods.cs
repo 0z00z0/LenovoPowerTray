@@ -83,6 +83,32 @@ internal static class NativeMethods
     [DllImport("user32.dll")]
     internal static extern bool DestroyIcon(IntPtr hIcon);
 
+    // ── Message boxes (Win32) ──────────────────────────────────────────────────
+    // Plain Win32 MessageBox — safe to call from any thread, works in this elevated
+    // unpackaged app, and needs no WinUI XamlRoot. Used for About / update prompts.
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int MessageBoxW(IntPtr hWnd, string text, string caption, uint type);
+
+    private const uint MB_OK              = 0x00000000;
+    private const uint MB_YESNO           = 0x00000004;
+    private const uint MB_ICONERROR       = 0x00000010;
+    private const uint MB_ICONWARNING     = 0x00000030;
+    private const uint MB_ICONINFORMATION = 0x00000040;
+    private const int  IDYES              = 6;
+
+    internal static void Info(string text, string caption)
+        => MessageBoxW(IntPtr.Zero, text, caption, MB_OK | MB_ICONINFORMATION);
+
+    internal static void Warn(string text, string caption)
+        => MessageBoxW(IntPtr.Zero, text, caption, MB_OK | MB_ICONWARNING);
+
+    internal static void Error(string text, string caption)
+        => MessageBoxW(IntPtr.Zero, text, caption, MB_OK | MB_ICONERROR);
+
+    /// <summary>Yes/No prompt; returns true when the user clicks Yes.</summary>
+    internal static bool Confirm(string text, string caption)
+        => MessageBoxW(IntPtr.Zero, text, caption, MB_YESNO | MB_ICONINFORMATION) == IDYES;
+
     // ── Common file dialogs (comdlg32) ─────────────────────────────────────────
     // The app is requireAdministrator (elevated). The WinRT FileOpenPicker/FileSavePicker
     // are unreliable in elevated processes, so settings Export/Import use the classic Win32

@@ -18,12 +18,9 @@ namespace LenovoTray.UI;
 /// </summary>
 public sealed partial class DashboardWindow : Window
 {
-    // Physical pixel dimensions — DPI scaling is handled by the OS (PerMonitorV2 manifest).
-    // Base heights include the history sparkline and the collapsed settings expander header.
-    private const int WindowWidth         = 280;
-    private const int WindowHeight        = 440;  // base (no sliders, settings collapsed)
-    private const int WindowHeightSliders = 530;  // extra ~90 px when threshold sliders shown
-    private const int SettingsExpandExtra = 175;  // added when settings expander is open
+    // Fixed logical width; the height is measured from the content each time the window is
+    // placed, so rows appearing/disappearing (sliders, travel button) need no height constants.
+    private const int WindowWidth = 280;
 
     // Arc gauge geometry: 100×100 px canvas, 7-o'clock start (135°), 270° sweep.
     private const double GaugeCx         = 50;
@@ -43,8 +40,6 @@ public sealed partial class DashboardWindow : Window
 
     // Guards slider ValueChanged handlers from triggering each other recursively.
     private bool _updatingSliders = false;
-    // Guards settings controls from writing back to SettingsService during initialisation.
-    private bool _updatingSettings = false;
 
     /// <summary>Time elapsed since the window was last hidden.</summary>
     public TimeSpan SinceHidden => DateTime.UtcNow - _hiddenAtUtc;
@@ -53,6 +48,7 @@ public sealed partial class DashboardWindow : Window
     {
         _app = app;
         InitializeComponent();
+        ConfigureSliderRanges();
         ConfigureWindowChrome();
 
         // Track arc never changes — build it once here instead of every refresh tick.
@@ -65,20 +61,40 @@ public sealed partial class DashboardWindow : Window
         Closed    += (_, _) => _refreshTimer.Stop();
     }
 
+    /// <summary>
+    /// Sets the sliders' Minimum/Maximum/StepFrequency from code instead of XAML. Assigning
+    /// <c>RangeBase.Minimum</c> through the XAML type-converter throws a XamlParseException
+    /// ("Failed to assign to property RangeBase.Minimum") at LoadComponent on this Windows App
+    /// SDK build, which crashed the whole dashboard. Direct property assignment bypasses that
+    /// path. Guarded so the value-changed handlers don't run their cross-slider logic or persist
+    /// settings during initialisation.
+    /// </summary>
+    private void ConfigureSliderRanges()
+    {
+        _updatingSliders = true;
+        SetRange(StartSlider,  5,  95, 5);
+        SetRange(StopSlider,  10, 100, 5);
+        _updatingSliders = false;
+    }
+
+    private static void SetRange(Slider slider, double min, double max, double step)
+    {
+        slider.Maximum       = max;   // set Maximum first so Minimum never transiently exceeds it
+        slider.Minimum       = min;
+        slider.StepFrequency = step;
+    }
+
     // ── Public surface ────────────────────────────────────────────────────────
 
     /// <summary>Positions the window above the system tray and shows it with fresh data.</summary>
     public void ShowNearTray()
     {
-        // Sync settings controls before the window is visible to avoid a flash.
-        InitSettingsPanel();
-
         // Load data before making the window visible to avoid a "Loading…" flash.
         Refresh();
 
-        // Size and position using the initial (base) height; ApplyStatusBadges will resize
-        // if the sliders section needs to expand after the background read completes.
-        PlaceWindow(GetCurrentWindowHeight());
+        // Size and position to the current content; ApplyStatusBadges re-places once the
+        // background read decides whether the threshold sliders / travel button are shown.
+        PlaceWindow();
 
         AppWindow.Show();
 
@@ -87,16 +103,18 @@ public sealed partial class DashboardWindow : Window
     }
 
     /// <summary>
-    /// Resizes and repositions the window (above the tray, bottom-right corner) to the
-    /// requested logical height. Callable from any thread — uses AppWindow which is thread-safe.
+    /// Resizes and repositions the window above the tray (bottom-right corner). The height is
+    /// measured from the content, so it always fits exactly whatever rows are currently visible.
     /// </summary>
-    private void PlaceWindow(int logicalHeight)
+    private void PlaceWindow()
     {
-        // AppWindow works in physical pixels, but the XAML content is in effective pixels
-        // (DIPs). Size and place using the work area + DPI of the monitor under the cursor
-        // (the screen whose tray was clicked) so content isn't clipped or shown off-monitor.
+        // AppWindow works in physical pixels, but the XAML content is in effective pixels (DIPs).
+        // Measure the root grid at the fixed width to get the natural content height.
+        RootGrid.Measure(new Size(WindowWidth, double.PositiveInfinity));
+        int logicalHeight = Math.Clamp((int)Math.Ceiling(RootGrid.DesiredSize.Height), 200, 720);
+
         var (work, s) = NativeMethods.GetCursorMonitorMetrics();
-        int w      = (int)Math.Ceiling(WindowWidth  * s);
+        int w      = (int)Math.Ceiling(WindowWidth   * s);
         int h      = (int)Math.Ceiling(logicalHeight * s);
         int margin = (int)Math.Ceiling(EdgeMargin    * s);
 
@@ -104,15 +122,6 @@ public sealed partial class DashboardWindow : Window
         AppWindow.Move(new Windows.Graphics.PointInt32(
             work.Right  - w - margin,
             work.Bottom - h - margin));
-    }
-
-    private int GetCurrentWindowHeight()
-    {
-        int h = ThresholdSliders.Visibility == Visibility.Visible
-                    ? WindowHeightSliders
-                    : WindowHeight;
-        if (SettingsExpander?.IsExpanded == true) h += SettingsExpandExtra;
-        return h;
     }
 
     /// <summary>Hides the window without destroying it so it can be shown again cheaply.</summary>
@@ -191,14 +200,7 @@ public sealed partial class DashboardWindow : Window
             bool onAC = report.Status is BatteryStatus.Charging or BatteryStatus.Idle;
             PowerSourceText.Text = onAC ? "AC Power" : "Battery";
 
-            ChargeStatusText.Text = report.Status switch
-            {
-                BatteryStatus.Charging    => "Charging",
-                BatteryStatus.Discharging => "Discharging",
-                BatteryStatus.Idle        => "Full / Idle",
-                BatteryStatus.NotPresent  => "No Battery",
-                _                         => ""
-            };
+            SetStatusGlyph(report.Status);
 
             // Charge rate: positive = power in, negative = drain.
             PowerRateText.Text = report.ChargeRateInMilliwatts switch
@@ -218,8 +220,28 @@ public sealed partial class DashboardWindow : Window
         catch
         {
             BatteryPercentText.Text = "--";
-            ChargeStatusText.Text   = "Error";
+            StatusGlyph.Text        = "!";
+            StatusGlyph.Foreground  = AppColors.StatusUnknownBrush;
         }
+    }
+
+    /// <summary>
+    /// Sets the compact gauge-centre glyph + colour for the battery state. Replaces the old
+    /// status word, which was too wide and overlapped the arc. ToolTip carries the full word.
+    /// </summary>
+    private void SetStatusGlyph(BatteryStatus status)
+    {
+        (string glyph, var brush, string tip) = status switch
+        {
+            BatteryStatus.Charging    => ("▲", AppColors.StatusChargingBrush,    "Charging"),
+            BatteryStatus.Discharging => ("▼", AppColors.StatusDischargingBrush, "Discharging"),
+            BatteryStatus.Idle        => ("●", AppColors.StatusIdleBrush,        "Full / Idle"),
+            BatteryStatus.NotPresent  => ("—", AppColors.StatusUnknownBrush,     "No battery"),
+            _                         => ("—", AppColors.StatusUnknownBrush,     ""),
+        };
+        StatusGlyph.Text       = glyph;
+        StatusGlyph.Foreground = brush;
+        ToolTipService.SetToolTip(StatusGlyph, tip);
     }
 
     // ── Time remaining ────────────────────────────────────────────────────────
@@ -257,6 +279,15 @@ public sealed partial class DashboardWindow : Window
             : $"~{ts.Minutes}m";
     }
 
+    /// <summary>Formats a history span as a left-edge axis label, e.g. "−42m" or "−1h 05m".</summary>
+    private static string FormatAgo(TimeSpan span)
+    {
+        if (span.TotalMinutes < 1) return "−<1m";
+        return span.TotalHours >= 1
+            ? $"−{(int)span.TotalHours}h {span.Minutes:00}m"
+            : $"−{span.Minutes}m";
+    }
+
     // ── History sparkline ─────────────────────────────────────────────────────
 
     private void UpdateSparkline(int currentPct)
@@ -264,7 +295,14 @@ public sealed partial class DashboardWindow : Window
         SparklineCanvas.Children.Clear();
 
         var samples = BatteryHistoryService.GetWindow(TimeSpan.FromHours(1));
-        if (samples.Length < 2) return;
+        if (samples.Length < 2)
+        {
+            SparklineStartLabel.Text = "—";
+            return;
+        }
+
+        // Time-axis label: span between the oldest and newest sample (right edge is "now").
+        SparklineStartLabel.Text = FormatAgo(samples[^1].At - samples[0].At);
 
         // Canvas size is known once the element has been measured; guard against first render.
         double w = SparklineCanvas.ActualWidth;
@@ -350,9 +388,24 @@ public sealed partial class DashboardWindow : Window
         }
         ThresholdSliders.Visibility = showSliders ? Visibility.Visible : Visibility.Collapsed;
 
-        // Resize window so sliders fit without clipping (only when already visible).
+        // ── Travel override ("charge to 100 % once") ──────────────────────────
+        // Shown whenever Smart Charge is capable, so it stays available to cancel even while
+        // active (when the threshold is temporarily lifted and the sliders are hidden).
+        if (chargeState is { Capable: true })
+        {
+            TravelOverrideButton.Visibility = Visibility.Visible;
+            TravelOverrideButton.Content = TravelOverrideService.IsActive
+                ? "✕  Cancel charge override"
+                : "⚡  Charge to 100 % once";
+        }
+        else
+        {
+            TravelOverrideButton.Visibility = Visibility.Collapsed;
+        }
+
+        // Resize the window to fit whatever is now visible.
         if (AppWindow.IsVisible)
-            PlaceWindow(GetCurrentWindowHeight());
+            PlaceWindow();
 
         // ── Smart Standby ─────────────────────────────────────────────────────
         SetFeatureBadge(SmartStandbyBadge, SmartStandbyIndicator, standbyOn);
@@ -425,108 +478,17 @@ public sealed partial class DashboardWindow : Window
         });
     }
 
-    // ── Settings panel ────────────────────────────────────────────────────────
+    // ── Travel override ("charge to 100 % once") ───────────────────────────────
 
-    /// <summary>Syncs all settings controls with the current persisted values.</summary>
-    private void InitSettingsPanel()
+    private void OnTravelOverrideButton(object sender, RoutedEventArgs e)
     {
-        var s = SettingsService.Current;
-        _updatingSettings = true;
-        LowBatteryToggle.IsOn         = s.LowBatteryWarningEnabled;
-        LowBatteryPctSlider.Value     = s.LowBatteryWarningPct;
-        LowBatteryPctValueText.Text   = $"{s.LowBatteryWarningPct}%";
-        StartupDelaySlider.Value      = s.StartupDelaySeconds;
-        StartupDelayValueText.Text    = $"{s.StartupDelaySeconds} s";
-        NumericIconToggle.IsOn        = s.IconMode == TrayIconMode.Numeric;
-        LowBatteryPctRow.Visibility   = s.LowBatteryWarningEnabled
-                                       ? Visibility.Visible
-                                       : Visibility.Collapsed;
-        _updatingSettings = false;
-    }
+        if (TravelOverrideService.IsActive)
+            TravelOverrideService.Cancel();
+        else
+            TravelOverrideService.Activate();
 
-    private void OnSettingsExpanderSizeChanged(object sender, SizeChangedEventArgs e)
-        => PlaceWindow(GetCurrentWindowHeight());
-
-    private void OnLowBatteryToggled(object sender, RoutedEventArgs e)
-    {
-        if (_updatingSettings) return;
-        var s = SettingsService.Current;
-        s.LowBatteryWarningEnabled  = LowBatteryToggle.IsOn;
-        LowBatteryPctRow.Visibility = s.LowBatteryWarningEnabled
-                                       ? Visibility.Visible
-                                       : Visibility.Collapsed;
-        SettingsService.Save();
-    }
-
-    private void OnLowBatteryPctChanged(object sender, RangeBaseValueChangedEventArgs e)
-    {
-        int val = (int)e.NewValue;
-        LowBatteryPctValueText.Text = $"{val}%";
-        if (_updatingSettings) return;
-        SettingsService.Current.LowBatteryWarningPct = val;
-        SettingsService.Save();
-    }
-
-    private void OnStartupDelayChanged(object sender, RangeBaseValueChangedEventArgs e)
-    {
-        int val = (int)e.NewValue;
-        StartupDelayValueText.Text = $"{val} s";
-        if (_updatingSettings) return;
-        SettingsService.Current.StartupDelaySeconds = val;
-        SettingsService.Save();
-    }
-
-    private void OnNumericIconToggled(object sender, RoutedEventArgs e)
-    {
-        if (_updatingSettings) return;
-        SettingsService.Current.IconMode = NumericIconToggle.IsOn
-                                            ? TrayIconMode.Numeric
-                                            : TrayIconMode.Arc;
-        SettingsService.Save();
-        // Immediately re-render the tray icon so the change is visible without waiting.
-        _app.ForceIconRefresh();
-    }
-
-    private void OnExportSettings(object sender, RoutedEventArgs e)
-    {
-        // Win32 Save dialog (elevation-safe — see NativeMethods). WinRT pickers are unreliable
-        // in this requireAdministrator process.
-        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
-        var path = NativeMethods.ShowSaveFileDialog(hwnd, "Export Lenovo Power Tray settings",
-            "LenovoPowerTray-settings.json", "json",
-            "Settings JSON (*.json)|*.json|All files (*.*)|*.*");
-        if (path is null) return;
-        try { SettingsService.Export(path); }
-        catch { /* I/O failure must not crash the popup. */ }
-    }
-
-    private void OnImportSettings(object sender, RoutedEventArgs e)
-    {
-        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
-        var path = NativeMethods.ShowOpenFileDialog(hwnd, "Import Lenovo Power Tray settings",
-            "json", "Settings JSON (*.json)|*.json|All files (*.*)|*.*");
-        if (path is null) return;
-
-        if (SettingsService.Import(path))
-        {
-            // Reflect the imported values everywhere they're shown.
-            InitSettingsPanel();
-            Refresh();
-            _app.ForceIconRefresh();
-        }
-    }
-
-    private void OnOpenSettingsFile(object sender, RoutedEventArgs e)
-    {
-        var filePath = SettingsService.FilePath;
-        var dir      = Path.GetDirectoryName(filePath) ?? filePath;
-        var args     = File.Exists(filePath) ? $"/select,\"{filePath}\"" : $"\"{dir}\"";
-        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-        {
-            FileName        = "explorer.exe",
-            Arguments       = args,
-            UseShellExecute = true,
-        });
+        // Re-read so the button label, badge, and sliders reflect the new state immediately.
+        Refresh();
     }
 
     // ── Arc gauge ─────────────────────────────────────────────────────────────
