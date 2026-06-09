@@ -432,11 +432,13 @@ public sealed partial class DashboardWindow : Window
     {
         var s = SettingsService.Current;
         _updatingSettings = true;
-        LowBatteryToggle.IsOn      = s.LowBatteryWarningEnabled;
-        LowBatteryPctBox.Value     = s.LowBatteryWarningPct;
-        StartupDelayBox.Value      = s.StartupDelaySeconds;
-        NumericIconToggle.IsOn     = s.IconMode == TrayIconMode.Numeric;
-        LowBatteryPctRow.Visibility = s.LowBatteryWarningEnabled
+        LowBatteryToggle.IsOn         = s.LowBatteryWarningEnabled;
+        LowBatteryPctSlider.Value     = s.LowBatteryWarningPct;
+        LowBatteryPctValueText.Text   = $"{s.LowBatteryWarningPct}%";
+        StartupDelaySlider.Value      = s.StartupDelaySeconds;
+        StartupDelayValueText.Text    = $"{s.StartupDelaySeconds} s";
+        NumericIconToggle.IsOn        = s.IconMode == TrayIconMode.Numeric;
+        LowBatteryPctRow.Visibility   = s.LowBatteryWarningEnabled
                                        ? Visibility.Visible
                                        : Visibility.Collapsed;
         _updatingSettings = false;
@@ -456,17 +458,21 @@ public sealed partial class DashboardWindow : Window
         SettingsService.Save();
     }
 
-    private void OnLowBatteryPctChanged(NumberBox sender, NumberBoxValueChangedEventArgs e)
+    private void OnLowBatteryPctChanged(object sender, RangeBaseValueChangedEventArgs e)
     {
-        if (_updatingSettings || double.IsNaN(e.NewValue)) return;
-        SettingsService.Current.LowBatteryWarningPct = (int)e.NewValue;
+        int val = (int)e.NewValue;
+        LowBatteryPctValueText.Text = $"{val}%";
+        if (_updatingSettings) return;
+        SettingsService.Current.LowBatteryWarningPct = val;
         SettingsService.Save();
     }
 
-    private void OnStartupDelayChanged(NumberBox sender, NumberBoxValueChangedEventArgs e)
+    private void OnStartupDelayChanged(object sender, RangeBaseValueChangedEventArgs e)
     {
-        if (_updatingSettings || double.IsNaN(e.NewValue)) return;
-        SettingsService.Current.StartupDelaySeconds = (int)e.NewValue;
+        int val = (int)e.NewValue;
+        StartupDelayValueText.Text = $"{val} s";
+        if (_updatingSettings) return;
+        SettingsService.Current.StartupDelaySeconds = val;
         SettingsService.Save();
     }
 

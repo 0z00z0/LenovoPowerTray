@@ -286,39 +286,47 @@
                 <!-- Low-battery % threshold (visible only when toggle is on) -->
                 <Grid x:Name="LowBatteryPctRow">
                     <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="52"/>
                         <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="76"/>
+                        <ColumnDefinition Width="40"/>
                     </Grid.ColumnDefinitions>
-                    <TextBlock Text="Warn at"
+                    <TextBlock Grid.Column="0" Text="Warn at"
                                FontSize="11"
                                VerticalAlignment="Center"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                    <NumberBox Grid.Column="1"
-                               x:Name="LowBatteryPctBox"
-                               Minimum="5" Maximum="50"
-                               SpinButtonPlacementMode="Compact"
-                               SmallChange="1"
-                               FontSize="11"
-                               ValueChanged="OnLowBatteryPctChanged"/>
+                    <Slider Grid.Column="1"
+                            x:Name="LowBatteryPctSlider"
+                            Minimum="5" Maximum="50" StepFrequency="1"
+                            IsThumbToolTipEnabled="False"
+                            VerticalAlignment="Center"
+                            ValueChanged="OnLowBatteryPctChanged"/>
+                    <TextBlock Grid.Column="2" x:Name="LowBatteryPctValueText"
+                               FontSize="11" VerticalAlignment="Center"
+                               HorizontalAlignment="Right"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                 </Grid>
 
                 <!-- Startup delay -->
                 <Grid>
                     <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="78"/>
                         <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="76"/>
+                        <ColumnDefinition Width="40"/>
                     </Grid.ColumnDefinitions>
-                    <TextBlock Text="Startup delay (seconds)"
+                    <TextBlock Grid.Column="0" Text="Startup delay"
                                FontSize="11"
                                VerticalAlignment="Center"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                    <NumberBox Grid.Column="1"
-                               x:Name="StartupDelayBox"
-                               Minimum="0" Maximum="120"
-                               SpinButtonPlacementMode="Compact"
-                               SmallChange="5"
-                               FontSize="11"
-                               ValueChanged="OnStartupDelayChanged"/>
+                    <Slider Grid.Column="1"
+                            x:Name="StartupDelaySlider"
+                            Minimum="0" Maximum="120" StepFrequency="5"
+                            IsThumbToolTipEnabled="False"
+                            VerticalAlignment="Center"
+                            ValueChanged="OnStartupDelayChanged"/>
+                    <TextBlock Grid.Column="2" x:Name="StartupDelayValueText"
+                               FontSize="11" VerticalAlignment="Center"
+                               HorizontalAlignment="Right"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                 </Grid>
 
                 <!-- Numeric icon toggle -->

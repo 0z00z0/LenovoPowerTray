@@ -92,14 +92,30 @@ internal static class IconGenerator
         using (var path    = BuildRoundedRectPath(rect, radius))
             g.FillPath(bgBrush, path);
 
-        // Large white % number centred in the icon.
-        string label    = percent > 0 ? $"{percent}" : "?";
-        // Scale font smaller for three-digit numbers ("100") so it still fits.
-        float  fontSize = Math.Max(7f, size * (label.Length >= 3 ? 0.27f : 0.34f));
-        using var font  = new Font("Segoe UI", fontSize, System.Drawing.FontStyle.Bold, GraphicsUnit.Pixel);
-        using var brush = new SolidBrush(Color.White);
-        using var sf    = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-        g.DrawString(label, font, brush, new RectangleF(0, 0, size, size), sf);
+        // Large % number filling the icon — sized to stay legible after Windows downscales
+        // the 32 px bitmap to the ~16 px tray slot. Three-digit "100" is scaled down to fit.
+        string label  = percent > 0 ? $"{percent}" : "?";
+        float  emSize = size * (label.Length >= 3 ? 0.46f : 0.66f);
+        using var sf  = new StringFormat
+        {
+            Alignment     = StringAlignment.Center,
+            LineAlignment = StringAlignment.Center,
+            FormatFlags   = StringFormatFlags.NoWrap,
+            Trimming      = StringTrimming.None,
+        };
+
+        // Draw the digits as a path with a dark outline + white fill. Plain white is invisible
+        // on the light-green "healthy/charging" background; the dark halo keeps the number
+        // readable on every background colour (green / orange / red).
+        using var family = new FontFamily("Segoe UI");
+        using var gp     = new GraphicsPath();
+        gp.AddString(label, family, (int)System.Drawing.FontStyle.Bold, emSize,
+                     new RectangleF(0, -size * 0.04f, size, size), sf);
+        using (var outline = new System.Drawing.Pen(Color.FromArgb(215, 0, 0, 0), Math.Max(1.5f, size * 0.08f))
+               { LineJoin = LineJoin.Round })
+            g.DrawPath(outline, gp);
+        using (var fill = new SolidBrush(Color.White))
+            g.FillPath(fill, gp);
 
         return bmp;
     }
@@ -178,17 +194,9 @@ internal static class IconGenerator
             DrawArc(g, fillPen, cx, cy, radius, 135f, 270f * percent / 100f);
         }
 
-        // Small % text in the centre (only legible at 32 px and above).
-        if (size >= 24)
-        {
-            string label = percent > 0 ? $"{percent}" : "?";
-            float  fontSize = Math.Max(6f, size * 0.22f);
-            using var font  = new Font("Segoe UI", fontSize, System.Drawing.FontStyle.Bold, GraphicsUnit.Pixel);
-            using var brush = new SolidBrush(Color.FromArgb(220, 255, 255, 255));
-            using var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-            g.DrawString(label, font, brush, new RectangleF(0, 0, size, size), sf);
-        }
-
+        // No centre text in arc mode: at the 16 px tray size a number inside the ring is
+        // illegible. The ring itself conveys the level; users who want a readable number use
+        // the Numeric tray-icon mode (RenderNumericBitmap), which fills the icon with digits.
         return bmp;
     }
 

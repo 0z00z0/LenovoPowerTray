@@ -4,7 +4,7 @@
     <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
     <RootNamespace>LenovoTray</RootNamespace>
-    <Version>1.0.1</Version>
+    <Version>1.0.3</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
 
     <!-- Identity / packaging metadata -->
@@ -17,8 +17,11 @@
     <RepositoryUrl>https://github.com/0z00z0/LenovoPowerTray</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
 
-    <!-- Drop the ~27 MB ICU payload (no localized UI; all formatting/parsing is ordinal/invariant). -->
-    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- NOTE: InvariantGlobalization must stay OFF. Setting it true strips the ICU payload,
+         which breaks the WinUI 3 XAML parser's culture-aware numeric coercion and throws
+         "Failed to assign to property RangeBase.Minimum" the moment any window containing a
+         Slider/ProgressBar (e.g. the dashboard) is constructed. The ~27 MB ICU payload is the
+         price of a working XAML UI here. -->
     <Platforms>x86;x64;ARM64</Platforms>
     <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString().ToLowerInvariant())</RuntimeIdentifier>
     <UseWinUI>true</UseWinUI>

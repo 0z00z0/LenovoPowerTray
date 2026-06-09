@@ -31,7 +31,37 @@ public partial class App : Application
     // Reset with 5 % hysteresis so it re-fires on the next dip if the user charges briefly.
     private bool _lowBatteryWarningFired;
 
-    public App() => InitializeComponent();
+    public App()
+    {
+        InitializeComponent();
+
+        // Last-resort diagnostics: log any unhandled managed exception to
+        // %AppData%\LenovoPowerTray\crash.log before the process dies, so GUI crashes
+        // (which surface only as an opaque 0xC000027B stowed exception in Event Viewer)
+        // leave an actionable stack trace behind.
+        UnhandledException += (_, e) =>
+        {
+            LogCrash("Application.UnhandledException", e.Exception);
+            // Leave e.Handled = false: some failures aren't safely recoverable, and we'd
+            // rather crash visibly than soldier on in a corrupt state.
+        };
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            LogCrash("AppDomain.UnhandledException", e.ExceptionObject as Exception);
+    }
+
+    private static void LogCrash(string source, Exception? ex)
+    {
+        try
+        {
+            var dir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "LenovoPowerTray");
+            Directory.CreateDirectory(dir);
+            File.AppendAllText(Path.Combine(dir, "crash.log"),
+                $"[{DateTime.Now:u}] {source}\n{ex}\n\n");
+        }
+        catch { /* logging must never throw */ }
+    }
 
     protected override async void OnLaunched(LaunchActivatedEventArgs args)
     {
@@ -215,19 +245,29 @@ public partial class App : Application
 
     private void ToggleDashboard()
     {
-        // Lazily create the window once and reuse it; subscribe Closed only at creation
-        // so handlers don't accumulate on every click.
-        if (_dashboard is null)
+        // Guard the whole open path: a failure building or showing the popup must not take
+        // down the tray app. Log it and stay alive so the menu/icon keep working.
+        try
         {
-            _dashboard = new DashboardWindow(this);
-            _dashboard.Closed += (_, _) => _dashboard = null;
-        }
+            // Lazily create the window once and reuse it; subscribe Closed only at creation
+            // so handlers don't accumulate on every click.
+            if (_dashboard is null)
+            {
+                _dashboard = new DashboardWindow(this);
+                _dashboard.Closed += (_, _) => _dashboard = null;
+            }
 
-        if (_dashboard.AppWindow.IsVisible)
-            _dashboard.HideWindow();
-        else if (_dashboard.SinceHidden.TotalMilliseconds > ReopenGuardMs)
-            _dashboard.ShowNearTray();
-        // else: this click is the same gesture that just auto-hid the popup — leave it hidden.
+            if (_dashboard.AppWindow.IsVisible)
+                _dashboard.HideWindow();
+            else if (_dashboard.SinceHidden.TotalMilliseconds > ReopenGuardMs)
+                _dashboard.ShowNearTray();
+            // else: this click is the same gesture that just auto-hid the popup — leave it hidden.
+        }
+        catch (Exception ex)
+        {
+            LogCrash("ToggleDashboard", ex);
+            _dashboard = null;   // drop the half-built window so the next click retries cleanly
+        }
     }
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────

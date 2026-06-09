@@ -54,12 +54,16 @@ RestartApplications=no
 Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 
 [Icons]
-Name: "{group}\{#AppName}";        Filename: "{app}\{#AppExe}"
-Name: "{userstartmenu}\{#AppName}"; Filename: "{app}\{#AppExe}"
+; Per-user "All apps" Start-menu entry. IconFilename is set explicitly so the shortcut
+; always shows the embedded app icon (some shells don't pick it up from the target alone).
+Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"; IconFilename: "{app}\{#AppExe}"; Comment: "{#AppName}"
+; Optional desktop shortcut (off by default; ticked via the task below).
+Name: "{userdesktop}\{#AppName}";  Filename: "{app}\{#AppExe}"; IconFilename: "{app}\{#AppExe}"; Tasks: desktopicon
 
 [Tasks]
 Name: "runstartup"; Description: "Run {#AppName} automatically at sign-in (starts elevated without a UAC prompt at boot)"; Flags: unchecked
 Name: "autoupdate"; Description: "Auto update in background (checks for updates via winget after each sign-in)"
+Name: "desktopicon"; Description: "Create a desktop shortcut"; Flags: unchecked
 
 ; NOTE: launching the app is handled in [Code] (LaunchApp), not [Run]. A [Run] entry uses
 ; CreateProcess, which CANNOT start a requireAdministrator exe (fails with "elevation
