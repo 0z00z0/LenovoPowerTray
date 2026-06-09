@@ -75,7 +75,7 @@
                 <!-- Percentage + a compact status glyph in the centre. The glyph (▲ charging /
                      ● idle / ▼ discharging) replaces the old status word, which was too wide and
                      touched the arc. Colour conveys state and is set in code. -->
-                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="-2">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="-3">
                     <TextBlock x:Name="BatteryPercentText"
                                Text="--"
                                FontSize="23"
@@ -84,7 +84,7 @@
                                Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
                     <TextBlock x:Name="StatusGlyph"
                                Text="●"
-                               FontSize="12"
+                               FontSize="18"
                                HorizontalAlignment="Center"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                 </StackPanel>
@@ -193,10 +193,14 @@
                                 VerticalAlignment="Center"/>
                     </Grid>
 
-                    <!-- Threshold sliders — visible when Smart Charge is capable and enabled -->
+                    <!-- Threshold sliders — visible when Smart Charge is capable and enabled.
+                         Changes auto-apply (debounced); there is no Apply button.
+                         Min/Max/StepFrequency are set in code-behind (ConfigureSliderRanges):
+                         assigning RangeBase.Minimum via XAML throws a XamlParseException on this
+                         Windows App SDK build. -->
                     <StackPanel x:Name="ThresholdSliders"
-                                Spacing="2"
-                                Margin="0,10,0,2"
+                                Spacing="0"
+                                Margin="0,6,0,0"
                                 Visibility="Collapsed">
                         <!-- Start % -->
                         <Grid>
@@ -208,10 +212,8 @@
                             <TextBlock Grid.Column="0" Text="Start"
                                        FontSize="11" VerticalAlignment="Center"
                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                            <!-- Min/Max/StepFrequency set in code-behind (ConfigureSliderRanges):
-                                 assigning RangeBase.Minimum via XAML throws a XamlParseException
-                                 on this Windows App SDK build. -->
                             <Slider Grid.Column="1" x:Name="StartSlider"
+                                    Height="28"
                                     IsThumbToolTipEnabled="False"
                                     ValueChanged="OnStartSliderChanged"/>
                             <TextBlock Grid.Column="2" x:Name="StartValueText"
@@ -230,6 +232,7 @@
                                        FontSize="11" VerticalAlignment="Center"
                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                             <Slider Grid.Column="1" x:Name="StopSlider"
+                                    Height="28"
                                     IsThumbToolTipEnabled="False"
                                     ValueChanged="OnStopSliderChanged"/>
                             <TextBlock Grid.Column="2" x:Name="StopValueText"
@@ -237,13 +240,6 @@
                                        HorizontalAlignment="Right"
                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                         </Grid>
-                        <Button x:Name="ApplyThresholdsButton"
-                                Content="Apply"
-                                HorizontalAlignment="Right"
-                                FontSize="11"
-                                Padding="12,3"
-                                Margin="0,4,0,0"
-                                Click="OnApplyThresholds"/>
                     </StackPanel>
 
                     <!-- One-shot "charge to 100% once" (travel override). Visible whenever Smart

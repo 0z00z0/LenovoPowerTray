@@ -41,6 +41,14 @@ public sealed partial class DashboardWindow : Window
     // Guards slider ValueChanged handlers from triggering each other recursively.
     private bool _updatingSliders = false;
 
+    // True from the first user slider move until the debounced apply completes. While set, the
+    // periodic Refresh must NOT overwrite the slider values with the device's current thresholds
+    // (otherwise an in-progress edit snaps back before it's applied).
+    private bool _thresholdEditPending = false;
+
+    // Debounces auto-apply: each slider move restarts it; it fires once the user pauses.
+    private readonly DispatcherTimer _thresholdApplyTimer;
+
     /// <summary>Time elapsed since the window was last hidden.</summary>
     public TimeSpan SinceHidden => DateTime.UtcNow - _hiddenAtUtc;
 
@@ -57,8 +65,11 @@ public sealed partial class DashboardWindow : Window
         _refreshTimer       = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
         _refreshTimer.Tick += (_, _) => Refresh();
 
+        _thresholdApplyTimer          = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(700) };
+        _thresholdApplyTimer.Tick    += (_, _) => CommitThresholds();
+
         Activated += OnActivated;
-        Closed    += (_, _) => _refreshTimer.Stop();
+        Closed    += (_, _) => { _refreshTimer.Stop(); _thresholdApplyTimer.Stop(); };
     }
 
     /// <summary>
@@ -376,8 +387,10 @@ public sealed partial class DashboardWindow : Window
         }
 
         // ── Threshold sliders ─────────────────────────────────────────────────
+        // Sync the sliders to the device value ONLY when the user isn't mid-edit; otherwise the
+        // 5 s refresh would clobber an in-progress change before the debounced apply runs.
         bool showSliders = chargeState is { Capable: true, Enabled: true };
-        if (showSliders && chargeState!.Start > 0 && chargeState.Stop > 0)
+        if (showSliders && !_thresholdEditPending && chargeState!.Start > 0 && chargeState.Stop > 0)
         {
             _updatingSliders  = true;
             StartSlider.Value = chargeState.Start;
@@ -436,6 +449,7 @@ public sealed partial class DashboardWindow : Window
             StopValueText.Text = $"{(int)StopSlider.Value}%";
             _updatingSliders   = false;
         }
+        QueueThresholdApply();
     }
 
     private void OnStopSliderChanged(object sender, RangeBaseValueChangedEventArgs e)
@@ -451,28 +465,40 @@ public sealed partial class DashboardWindow : Window
             StartValueText.Text = $"{(int)StartSlider.Value}%";
             _updatingSliders    = false;
         }
+        QueueThresholdApply();
     }
 
-    private void OnApplyThresholds(object sender, RoutedEventArgs e)
+    /// <summary>Marks an edit pending and (re)starts the debounce so rapid drags apply only once.</summary>
+    private void QueueThresholdApply()
     {
+        _thresholdEditPending = true;   // freezes the periodic refresh from reverting the sliders
+        _thresholdApplyTimer.Stop();
+        _thresholdApplyTimer.Start();
+    }
+
+    /// <summary>Auto-applies the current slider values (debounced). Replaces the old Apply button.</summary>
+    private void CommitThresholds()
+    {
+        _thresholdApplyTimer.Stop();
         int start = (int)StartSlider.Value;
         int stop  = (int)StopSlider.Value;
-        ApplyThresholdsButton.IsEnabled = false;
         Task.Run(() =>
         {
             bool ok = ChargeThresholdService.SetThresholds(start, stop);
             DispatcherQueue.TryEnqueue(() =>
             {
-                ApplyThresholdsButton.IsEnabled = true;
-                if (!ok)
+                if (ok)
+                {
+                    // Threshold is now custom — clear any active preset name.
+                    SettingsService.Current.ActivePreset = null;
+                    SettingsService.Save();
+                }
+                else
                 {
                     SmartChargeDetailText.Text = "Error — check driver";
-                    return;
                 }
-                // Clear the active preset name since the threshold is now custom.
-                SettingsService.Current.ActivePreset = null;
-                SettingsService.Save();
-                // Full Refresh re-reads the service and repaints all badges, ticks, and sliders.
+                // Edit is done; let the next refresh resync (device now matches the sliders).
+                _thresholdEditPending = false;
                 Refresh();
             });
         });
