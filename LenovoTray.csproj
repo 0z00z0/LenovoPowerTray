@@ -4,7 +4,7 @@
     <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
     <RootNamespace>LenovoTray</RootNamespace>
-    <Version>1.0.16</Version>
+    <Version>1.0.17</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
 
     <!-- Identity / packaging metadata -->
@@ -93,5 +93,23 @@
     <Copy SourceFiles="$(OutDir)$(AssemblyName).pri"
           DestinationFolder="$(PublishDir)"
           SkipUnchangedFiles="true" />
+  </Target>
+
+  <!--
+    Remove the Windows App SDK ML/ONNX subsystem from the publish output.
+    Microsoft.WindowsAppSDK pulls in Microsoft.Windows.AI.MachineLearning as a transitive
+    dependency, which adds onnxruntime.dll (20 MB), DirectML.dll (18 MB), and friends.
+    This app uses no Windows.AI APIs; the DLLs are only loaded on demand when those APIs are
+    called, so removing them is safe and saves ~38 MB from the installer.
+  -->
+  <Target Name="PrunePublishOutput" AfterTargets="Publish">
+    <ItemGroup>
+      <_FilesToPrune Include="$(PublishDir)onnxruntime.dll" />
+      <_FilesToPrune Include="$(PublishDir)DirectML.dll" />
+      <_FilesToPrune Include="$(PublishDir)onnxruntime_providers_shared.dll" />
+      <_FilesToPrune Include="$(PublishDir)Microsoft.ML.OnnxRuntime.dll" />
+    </ItemGroup>
+    <Delete Files="@(_FilesToPrune)" Condition="Exists('%(Identity)')" />
+    <Message Text="Pruned unused ML/ONNX files from publish output." Importance="high" />
   </Target>
 </Project>
