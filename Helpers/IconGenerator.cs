@@ -48,20 +48,42 @@ internal static class IconGenerator
     /// Renders a live battery-level tray icon as a 32×32 <see cref="System.Drawing.Icon"/>.
     /// When <paramref name="mode"/> is <see cref="TrayIconMode.Numeric"/> the icon shows a
     /// large percentage number on a colour-coded background instead of an arc gauge.
-    /// The caller must dispose the returned icon (and call <see cref="NativeMethods.DestroyIcon"/>
-    /// on the GDI handle) when replacing it with a newer one.
+    /// The returned icon owns an independent, data-backed handle, so the caller can safely
+    /// <see cref="System.Drawing.Icon.Dispose"/> it once a newer icon replaces it.
     /// </summary>
+    /// <remarks>
+    /// Do NOT use the tempting <c>Icon.FromHandle(bmp.GetHicon()).Clone()</c> pattern here.
+    /// An icon created from a bare HICON carries no icon data, so <c>Clone()</c> merely copies
+    /// the handle <em>reference</em> rather than the bitmap. Destroying the source HICON then
+    /// leaves the returned icon with a dangling handle; the shell faults when it paints it
+    /// (Shell_NotifyIcon → access violation in CoreMessagingXP, 0xc000027b) and a later
+    /// Dispose double-frees it. Instead, serialise the rendered bitmap to an in-memory .ico
+    /// stream and reload it: the resulting icon owns its own data and handle — the same
+    /// guarantee a file-loaded icon gives, without per-tick disk I/O.
+    /// </remarks>
     internal static System.Drawing.Icon RenderBatteryIcon(
         int percent, bool charging, TrayIconMode mode = TrayIconMode.Arc)
     {
-        using var bmp   = mode == TrayIconMode.Numeric
+        using var bmp = mode == TrayIconMode.Numeric
                             ? RenderNumericBitmap(32, percent, charging)
                             : RenderBatteryBitmap(32, percent, charging);
-        IntPtr    hIcon = bmp.GetHicon();
-        // Clone copies the icon data into a managed-owned handle; destroy the GDI original.
-        var icon = (System.Drawing.Icon)System.Drawing.Icon.FromHandle(hIcon).Clone();
-        NativeMethods.DestroyIcon(hIcon);
-        return icon;
+
+        // GetHicon() returns a GDI handle we must free; wrap it only long enough to serialise
+        // the icon bits into a stream, then destroy the handle. The reloaded icon is fully
+        // independent of this handle.
+        IntPtr hIcon = bmp.GetHicon();
+        try
+        {
+            using var tmp = System.Drawing.Icon.FromHandle(hIcon);
+            using var ms  = new MemoryStream();
+            tmp.Save(ms);            // writes the icon in .ico format (populates icon data)
+            ms.Position = 0;
+            return new System.Drawing.Icon(ms);  // owns its data + handle; safe to dispose
+        }
+        finally
+        {
+            NativeMethods.DestroyIcon(hIcon);
+        }
     }
 
     /// <summary>
@@ -79,11 +101,11 @@ internal static class IconGenerator
         // Colour-coded background (same scheme as the arc fill).
         Color bg = percent switch
         {
-            > 50 => Color.FromArgb(255, 0x10, 0xB9, 0x81),
-            > 20 => Color.FromArgb(255, 0xFF, 0x8C, 0x00),
+            > 50 => Color.FromArgb(255, 0x22, 0xD3, 0x9A),
+            > 20 => Color.FromArgb(255, 0xFF, 0xA5, 0x20),
             _    => Color.FromArgb(255, 0xE2, 0x00, 0x1A),
         };
-        if (charging) bg = Color.FromArgb(255, 0x10, 0xB9, 0x81);
+        if (charging) bg = Color.FromArgb(255, 0x22, 0xD3, 0x9A);
 
         int margin = Math.Max(1, (int)Math.Round(size * MarginFraction));
         var rect   = new Rectangle(margin, margin, size - margin * 2 - 1, size - margin * 2 - 1);
@@ -111,7 +133,7 @@ internal static class IconGenerator
         using var gp     = new GraphicsPath();
         gp.AddString(label, family, (int)System.Drawing.FontStyle.Bold, emSize,
                      new RectangleF(0, -size * 0.04f, size, size), sf);
-        using (var outline = new System.Drawing.Pen(Color.FromArgb(215, 0, 0, 0), Math.Max(1.5f, size * 0.08f))
+        using (var outline = new System.Drawing.Pen(Color.FromArgb(215, 0, 0, 0), Math.Max(2f, size * 0.10f))
                { LineJoin = LineJoin.Round })
             g.DrawPath(outline, gp);
         using (var fill = new SolidBrush(Color.White))
@@ -174,7 +196,7 @@ internal static class IconGenerator
         float stroke = Math.Max(2f, 7f * scale);   // proportional stroke
 
         // Track (background ring).
-        using var trackPen = new System.Drawing.Pen(Color.FromArgb(60, 200, 200, 200), stroke);
+        using var trackPen = new System.Drawing.Pen(Color.FromArgb(120, 220, 220, 220), stroke);
         trackPen.StartCap = trackPen.EndCap = System.Drawing.Drawing2D.LineCap.Round;
         DrawArc(g, trackPen, cx, cy, radius, 135f, 270f);
 
@@ -183,11 +205,11 @@ internal static class IconGenerator
             // Fill colour: green > 50%, orange 21-50%, red ≤ 20%.
             Color fillColor = percent switch
             {
-                > 50 => Color.FromArgb(255, 0x10, 0xB9, 0x81),  // green
-                > 20 => Color.FromArgb(255, 0xFF, 0x8C, 0x00),  // orange
+                > 50 => Color.FromArgb(255, 0x22, 0xD3, 0x9A),  // green
+                > 20 => Color.FromArgb(255, 0xFF, 0xA5, 0x20),  // orange
                 _    => Color.FromArgb(255, 0xE2, 0x00, 0x1A),  // red
             };
-            if (charging) fillColor = Color.FromArgb(255, 0x10, 0xB9, 0x81); // always green when charging
+            if (charging) fillColor = Color.FromArgb(255, 0x22, 0xD3, 0x9A); // always green when charging
 
             using var fillPen = new System.Drawing.Pen(fillColor, stroke);
             fillPen.StartCap = fillPen.EndCap = System.Drawing.Drawing2D.LineCap.Round;

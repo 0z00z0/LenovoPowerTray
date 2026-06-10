@@ -56,7 +56,7 @@ Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubd
 [Icons]
 ; Per-user "All apps" Start-menu entry. IconFilename is set explicitly so the shortcut
 ; always shows the embedded app icon (some shells don't pick it up from the target alone).
-Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"; IconFilename: "{app}\{#AppExe}"; Comment: "{#AppName}"
+Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"; IconFilename: "{app}\AppIcon.ico"; Comment: "{#AppName}"
 ; Optional desktop shortcut (off by default; ticked via the task below).
 Name: "{userdesktop}\{#AppName}";  Filename: "{app}\{#AppExe}"; IconFilename: "{app}\{#AppExe}"; Tasks: desktopicon
 
@@ -159,7 +159,21 @@ begin
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
+var
+  ResultCode: Integer;
 begin
+  if CurStep = ssInstall then
+  begin
+    // Kill any running instance BEFORE files are replaced so nothing is locked.
+    // LenovoTray.exe is requireAdministrator (elevated), so a non-elevated taskkill is
+    // refused with "Access is denied". Elevate via runas — one UAC prompt, then the kill
+    // succeeds and the install continues without locked-file errors.
+    if AppIsRunning() then
+      ShellExec('runas', ExpandConstant('{cmd}'),
+                '/C taskkill /F /IM "{#AppExe}"',
+                '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  end;
+
   if CurStep = ssPostInstall then
   begin
     if WizardIsTaskSelected('runstartup') then RegisterStartupTask();

@@ -144,12 +144,12 @@
                 <Grid Grid.Row="1" Margin="7,0,7,3">
                     <TextBlock x:Name="SparklineStartLabel"
                                Text="—"
-                               FontSize="9"
+                               FontSize="11"
                                HorizontalAlignment="Left"
                                Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
                     <TextBlock x:Name="SparklineEndLabel"
                                Text="now"
-                               FontSize="9"
+                               FontSize="11"
                                HorizontalAlignment="Right"
                                Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
                 </Grid>

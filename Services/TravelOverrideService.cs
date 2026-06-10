@@ -1,3 +1,5 @@
+using Windows.System.Power;
+
 namespace LenovoTray.Services;
 
 /// <summary>
@@ -5,9 +7,9 @@ namespace LenovoTray.Services;
 /// <para>
 /// When <see cref="Activate"/> is called the current Smart Charge threshold is saved
 /// to settings and the threshold is disabled so the battery can charge to 100 %.
-/// On the next Charging → Idle transition (detected by <c>App</c> via
-/// <see cref="OnChargeComplete"/>) the saved threshold is restored automatically.
-/// The user can also cancel early via <see cref="Cancel"/>.
+/// <c>App</c> feeds every battery reading to <see cref="OnBatteryReport"/>; once the battery
+/// reaches a full/idle state the saved threshold is restored automatically. The user can also
+/// cancel early via <see cref="Cancel"/>.
 /// </para>
 /// <para>
 /// State is persisted so the override survives an app restart mid-charge.
@@ -17,6 +19,23 @@ internal static class TravelOverrideService
 {
     /// <summary>True while a travel override is active.</summary>
     public static bool IsActive => SettingsService.Current.TravelOverrideActive;
+
+    /// <summary>The tray/dashboard action label for the override, reflecting its current state.</summary>
+    public static string ActionLabel =>
+        IsActive ? "✕  Revert to charge threshold" : "⚡  Charge to 100 % once";
+
+    // Fire-once latch for the current activation (0 = armed, 1 = revert dispatched). ApplyRevert
+    // clears TravelOverrideActive only asynchronously (background Task), so IsActive lags for a
+    // few battery ticks after the revert is dispatched — this latch stops a second dispatch.
+    // Reset to 0 whenever the override is no longer active, readying it for the next activation.
+    // Swapped with Interlocked because OnBatteryReport runs on the MTA battery thread and the
+    // synchronous startup call can overlap an OS report — the CAS guarantees a single winner.
+    private static int _revertDispatched;
+
+    // Previous battery status, for detecting the Charging→Idle completion edge. Only touched
+    // from OnBatteryReport; a benign race there at worst misses one edge (the next tick, or the
+    // pct≥100 fallback, still reverts).
+    private static BatteryStatus _lastStatus = BatteryStatus.NotPresent;
 
     /// <summary>
     /// Saves the current thresholds and disables Smart Charge so the battery charges to 100 %.
@@ -53,12 +72,37 @@ internal static class TravelOverrideService
     public static void Cancel() => ApplyRevert();
 
     /// <summary>
-    /// Called by <c>App</c> on every Charging → Idle battery-status transition.
-    /// Reverts the threshold when the override is active (i.e. the charge cycle is complete).
+    /// Fed the latest battery state by <c>App</c> on every report. Reverts to the saved thresholds
+    /// once the override is active and charging has completed. "Complete" is either:
+    /// <list type="bullet">
+    /// <item>the Charging→Idle edge — fires at whatever level the firmware calls "full" (covers a
+    /// worn battery that settles to Idle a couple of percent below 100), or</item>
+    /// <item>sitting Idle at 100 % — a fallback for firmware that jumps straight to Idle without an
+    /// observable Charging phase (e.g. override activated while already idle).</item>
+    /// </list>
+    /// The two together restore the behaviour an earlier single-trigger refactor narrowed: the
+    /// edge alone missed the already-idle case, the level alone missed sub-100 % completion.
     /// </summary>
-    public static void OnChargeComplete()
+    public static void OnBatteryReport(int pct, BatteryStatus status)
     {
-        if (IsActive) ApplyRevert();
+        if (!IsActive)
+        {
+            _lastStatus = status;
+            Interlocked.Exchange(ref _revertDispatched, 0);   // re-arm for the next activation
+            return;
+        }
+
+        bool chargingJustCompleted = _lastStatus == BatteryStatus.Charging &&
+                                     status      == BatteryStatus.Idle;
+        bool fullAndIdle           = status == BatteryStatus.Idle && pct >= 100;
+        _lastStatus = status;
+
+        // CAS the latch so only the first qualifying report dispatches the revert.
+        if ((chargingJustCompleted || fullAndIdle) &&
+            Interlocked.CompareExchange(ref _revertDispatched, 1, 0) == 0)
+        {
+            ApplyRevert();
+        }
     }
 
     private static void ApplyRevert()

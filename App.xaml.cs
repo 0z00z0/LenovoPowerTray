@@ -148,6 +148,18 @@ public partial class App : Application
                 UpdateTrayIcon(pct, charging);
             }
 
+            // ── Dashboard live update ──────────────────────────────────────────
+            // Push an immediate refresh to the open dashboard so power connect/disconnect
+            // and percentage changes are reflected at once, without waiting for the 5 s timer.
+            if (_dashboard is { } dash)
+            {
+                _dispatcher?.TryEnqueue(() =>
+                {
+                    if (dash.AppWindow.IsVisible)
+                        dash.RefreshFromEvent();
+                });
+            }
+
             // ── Low-battery warning ───────────────────────────────────────────
             var s = SettingsService.Current;
             if (s.LowBatteryWarningEnabled &&
@@ -173,10 +185,12 @@ public partial class App : Application
                 var state   = ChargeThresholdService.Read();
                 int stopPct = state is { Enabled: true, Stop: > 0 } ? state.Stop : 100;
                 ToastService.NotifyChargeComplete(stopPct);
-
-                // Travel override: revert to saved thresholds now that charging is complete.
-                TravelOverrideService.OnChargeComplete();
             }
+
+            // ── Travel override revert ────────────────────────────────────────
+            // Feed every reading to the service; it owns the "revert once charging completes"
+            // decision (Charging→Idle edge, or Idle at 100 %) and the fire-once latch.
+            TravelOverrideService.OnBatteryReport(pct, report.Status);
 
             // ── Toast: AC connected ───────────────────────────────────────────
             if (_lastBatteryStatus == BatteryStatus.Discharging &&

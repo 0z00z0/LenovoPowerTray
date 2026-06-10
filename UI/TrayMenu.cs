@@ -57,9 +57,7 @@ internal sealed class TrayMenu
 
                 _travelItem = new MenuFlyoutItem
                 {
-                    Text    = TravelOverrideService.IsActive
-                                ? "✕  Cancel charge override"
-                                : "⚡  Charge to 100 % once",
+                    Text    = TravelOverrideService.ActionLabel,
                     Command = new RelayCommand(OnTravelOverride),
                 };
                 Flyout.Items.Add(_travelItem);
@@ -143,9 +141,7 @@ internal sealed class TrayMenu
 
         // Travel override label.
         if (_travelItem is not null)
-            _travelItem.Text = TravelOverrideService.IsActive
-                ? "✕  Cancel charge override"
-                : "⚡  Charge to 100 % once";
+            _travelItem.Text = TravelOverrideService.ActionLabel;
 
         // Icon mode toggle.
         if (_iconModeItem is not null)

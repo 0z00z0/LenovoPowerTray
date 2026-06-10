@@ -97,6 +97,16 @@ public sealed partial class DashboardWindow : Window
 
     // ── Public surface ────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Triggers an immediate full refresh. Called by <c>App</c> when a battery event fires (e.g.
+    /// AC connected / disconnected, or a travel-override auto-revert that re-enables Smart Charge)
+    /// so both the battery gauge AND the feature badges update in real time rather than waiting
+    /// for the next 5-second timer tick. The badge read (Lenovo RPC + service query) is cheap
+    /// relative to how briefly this popup stays open, so refreshing it per event is fine.
+    /// Must be called on the UI thread.
+    /// </summary>
+    internal void RefreshFromEvent() => Refresh();
+
     /// <summary>Positions the window above the system tray and shows it with fresh data.</summary>
     public void ShowNearTray()
     {
@@ -320,9 +330,14 @@ public sealed partial class DashboardWindow : Window
         double h = SparklineCanvas.ActualHeight;
         if (w < 4 || h < 4) return;
 
+        // Projection from (time, percent) to canvas coordinates. Captured once here so the
+        // polyline and the min/max markers can't drift apart on padding/inversion changes.
         const double pad = 4;
         double tMin   = samples[0].At.Ticks;
         double tRange = Math.Max((double)(samples[^1].At.Ticks - samples[0].At.Ticks), 1);
+        double ProjectX(long ticks) => pad + (ticks - tMin) / tRange * (w - pad * 2);
+        // Y axis: 0% at bottom, 100% at top; invert because canvas Y grows downward.
+        double ProjectY(int pct)    => (h - pad) - pct / 100.0 * (h - pad * 2);
 
         var poly = new Microsoft.UI.Xaml.Shapes.Polyline
         {
@@ -337,14 +352,58 @@ public sealed partial class DashboardWindow : Window
         };
 
         foreach (var (at, pct) in samples)
-        {
-            double x = pad + (at.Ticks - tMin) / tRange * (w - pad * 2);
-            // Y axis: 0% at bottom, 100% at top; invert because canvas Y grows downward.
-            double y = (h - pad) - pct / 100.0 * (h - pad * 2);
-            poly.Points.Add(new Point(x, y));
-        }
+            poly.Points.Add(new Point(ProjectX(at.Ticks), ProjectY(pct)));
 
         SparklineCanvas.Children.Add(poly);
+
+        DrawSparklineMarkers(samples, w, ProjectX, ProjectY);
+    }
+
+    /// <summary>
+    /// Annotates the highest and lowest points of the sparkline with a coloured dot and a
+    /// percentage label. No-op when the visible range is flat (nothing meaningful to mark).
+    /// </summary>
+    private void DrawSparklineMarkers(
+        (DateTime At, int Pct)[] samples, double canvasWidth,
+        Func<long, double> projectX, Func<int, double> projectY)
+    {
+        int maxPct = int.MinValue, minPct = int.MaxValue, maxIdx = 0, minIdx = 0;
+        for (int i = 0; i < samples.Length; i++)
+        {
+            if (samples[i].Pct > maxPct) { maxPct = samples[i].Pct; maxIdx = i; }
+            if (samples[i].Pct < minPct) { minPct = samples[i].Pct; minIdx = i; }
+        }
+        if (maxPct == minPct) return;
+
+        AddMarker(samples[maxIdx].At.Ticks, maxPct, AppColors.GaugeHighBrush);
+        AddMarker(samples[minIdx].At.Ticks, minPct, AppColors.GaugeLowBrush);
+
+        void AddMarker(long ticks, int pct, Brush brush)
+        {
+            const double dotR = 3;
+            double cx = projectX(ticks);
+            double cy = projectY(pct);
+
+            var dot = new Microsoft.UI.Xaml.Shapes.Ellipse
+            {
+                Width = dotR * 2, Height = dotR * 2, Fill = brush,
+            };
+            Canvas.SetLeft(dot, cx - dotR);
+            Canvas.SetTop(dot,  cy - dotR);
+            SparklineCanvas.Children.Add(dot);
+
+            const double labelW = 26; // approximate width budget for edge clamping
+            var label = new TextBlock
+            {
+                Text       = $"{pct}%",
+                FontSize   = 9,
+                // Reuse the axis labels' themed brush so the annotation tracks light/dark mode.
+                Foreground = SparklineStartLabel.Foreground,
+            };
+            Canvas.SetLeft(label, Math.Clamp(cx - labelW / 2, 0, Math.Max(0, canvasWidth - labelW)));
+            Canvas.SetTop(label,  cy - dotR - 11); // ~11px above the dot centre
+            SparklineCanvas.Children.Add(label);
+        }
     }
 
     // Called on the UI thread after the background read completes.
@@ -407,9 +466,7 @@ public sealed partial class DashboardWindow : Window
         if (chargeState is { Capable: true })
         {
             TravelOverrideButton.Visibility = Visibility.Visible;
-            TravelOverrideButton.Content = TravelOverrideService.IsActive
-                ? "✕  Cancel charge override"
-                : "⚡  Charge to 100 % once";
+            TravelOverrideButton.Content = TravelOverrideService.ActionLabel;
         }
         else
         {
