@@ -25,6 +25,7 @@ internal sealed class TrayMenu
     private MenuFlyoutItem?       _updateItem;
     private MenuFlyoutItem?       _travelItem;
     private ToggleMenuFlyoutItem? _iconModeItem;
+    private AboutWindow?          _aboutWindow;
 
     // Settings submenu state (radio-style items synced in RefreshState).
     private ToggleMenuFlyoutItem? _lowBattEnabledItem;
@@ -94,7 +95,7 @@ internal sealed class TrayMenu
 
         // ── About / Exit ──────────────────────────────────────────────────────
         Flyout.Items.Add(new MenuFlyoutSeparator());
-        Flyout.Items.Add(new MenuFlyoutItem { Text = "About…", Command = new RelayCommand(ShowAbout) });
+        Flyout.Items.Add(new MenuFlyoutItem { Text = "About…", Command = new RelayCommand(() => ShowAbout()) });
         Flyout.Items.Add(new MenuFlyoutSeparator());
         Flyout.Items.Add(new MenuFlyoutItem { Text = "Exit", Command = new RelayCommand(onExit) });
 
@@ -314,20 +315,18 @@ internal sealed class TrayMenu
 
     // ── About / updates ─────────────────────────────────────────────────────
 
-    private const string AppName   = "Lenovo Power Tray";
-    private const string Publisher = "ZeroZero Software";
-    private const string RepoUrl   = "https://github.com/0z00z0/LenovoPowerTray";
+    private const string AppName = "Lenovo Power Tray";
 
-    private static void ShowAbout()
+    private void ShowAbout()
     {
-        var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "—";
-        if (NativeMethods.Confirm(
-                $"{AppName}\nVersion {version}\n\n" +
-                $"Publisher:  {Publisher}\n" +
-                $"License:    MIT\n\n" +
-                "Open the GitHub page?",
-                $"About {AppName}"))
-            Process.Start(new ProcessStartInfo(RepoUrl) { UseShellExecute = true });
+        if (_aboutWindow is not null)
+        {
+            _aboutWindow.Activate();
+            return;
+        }
+        _aboutWindow = new AboutWindow(_onExit);
+        _aboutWindow.Closed += (_, _) => _aboutWindow = null;
+        _aboutWindow.Activate();
     }
 
     private async Task CheckForUpdatesAsync()
