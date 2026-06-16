@@ -33,7 +33,7 @@ internal static class IconGenerator
     /// </summary>
     // Version stamp baked into the filename so an in-place app update regenerates the icon
     // automatically rather than serving the stale cached file from a previous version.
-    private const string IconVersion = "v3";
+    private const string IconVersion = "v4";
 
     internal static string GenerateAndSaveTrayIcon(string outputDirectory)
     {
@@ -189,29 +189,28 @@ internal static class IconGenerator
         g.PixelOffsetMode = PixelOffsetMode.HighQuality;
         g.Clear(Color.Transparent);
 
-        // Dark rounded-square background — makes the arc pop on both light and dark taskbars.
-        int margin = Math.Max(1, (int)Math.Round(size * MarginFraction));
-        var rect   = new Rectangle(margin, margin, size - margin * 2 - 1, size - margin * 2 - 1);
-        int radius = Math.Max(2, (int)Math.Round(size * CornerRadiusFraction));
-        using (var bgBrush = new SolidBrush(Color.FromArgb(255, 28, 28, 28)))
+        // Dark rounded-square background filling the full icon area.
+        var rect   = new Rectangle(0, 0, size, size);
+        int radius = Math.Max(3, (int)Math.Round(size * CornerRadiusFraction));
+        using (var bgBrush = new SolidBrush(Color.FromArgb(255, 22, 22, 22)))
         using (var path    = BuildRoundedRectPath(rect, radius))
             g.FillPath(bgBrush, path);
 
-        // Virtual 100×100 canvas → scale to actual icon size.
-        float scale  = size / 100f;
-        float cx     = 50 * scale;
-        float cy     = 50 * scale;
-        float r      = 33 * scale;                  // slightly tighter to leave room for background
-        float stroke = Math.Max(2.5f, 7f * scale);  // proportional stroke
+        // Arc geometry: stroke fills as much of the icon as possible.
+        // Outer arc edge lands ~1 px inside the icon edge so antialiasing doesn't clip.
+        float stroke = size * 0.19f;                    // ~6 px at 32 px
+        float cx     = size / 2f;
+        float cy     = size / 2f;
+        float r      = cx - stroke / 2f - 1f;          // outer edge = cx + r + stroke/2 ≈ size-1
 
-        // Track (empty portion of ring) — visible but subtle on the dark background.
-        using var trackPen = new System.Drawing.Pen(Color.FromArgb(255, 70, 70, 70), stroke);
+        // Track (empty portion of ring) — dimly visible on the dark background.
+        using var trackPen = new System.Drawing.Pen(Color.FromArgb(255, 60, 60, 60), stroke);
         trackPen.StartCap = trackPen.EndCap = System.Drawing.Drawing2D.LineCap.Round;
         DrawArc(g, trackPen, cx, cy, r, 135f, 270f);
 
         if (percent > 0)
         {
-            // Fill colour: green > 50%, orange 21-50%, red ≤ 20%.
+            // Fill colour: green > 50 %, orange 21–50 %, red ≤ 20 %.
             Color fillColor = percent switch
             {
                 > 50 => Color.FromArgb(255, 0x22, 0xD3, 0x9A),  // green
