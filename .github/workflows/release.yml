@@ -206,7 +206,7 @@ jobs:
       # the manifests but does NOT publish a release.
       - name: Create GitHub Release
         if: ${{ github.ref_type == 'tag' }}
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', steps.version.outputs.version) }}
           name: Lenovo Power Tray v${{ steps.version.outputs.version }}
