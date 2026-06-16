@@ -137,6 +137,172 @@ internal static class NativeMethods
     internal static bool Confirm(string text, string caption)
         => MessageBoxW(IntPtr.Zero, text, caption, MB_YESNO | MB_ICONINFORMATION) == IDYES;
 
+    // ── Task Dialog — 3-button update prompt ────────────────────────────────────
+    // TaskDialogIndirect supports fully custom button text and an expandable section,
+    // making it ideal for the "update available" prompt with inline release notes.
+    //
+    // CRITICAL: TASKDIALOGCONFIG and TASKDIALOG_BUTTON are declared with 1-byte packing
+    // in commctrl.h (they sit inside a #include <pshpack1.h> … <poppack.h> block), so the
+    // x64 sizes are 160 and 12 — NOT the 176/16 you'd get from natural 8-byte alignment.
+    // Pack=1 reproduces that. If the size/offsets are wrong, TaskDialogIndirect rejects the
+    // call with E_INVALIDARG and silently shows nothing (no exception), so "Check for
+    // updates" appears to do nothing.
+
+    internal enum UpdateAction { Update, ShowReleases, Cancel }
+
+    private const uint TDF_ALLOW_DIALOG_CANCELLATION = 0x0008;
+    private const uint TDF_SIZE_TO_CONTENT           = 0x01000000;
+    private const uint TDCBF_CANCEL_BUTTON           = 0x0008;
+    private const uint MB_TOPMOST                    = 0x00040000;
+
+    // TD_INFORMATION_ICON = MAKEINTRESOURCEW(-3) = (WCHAR*)0xFFFD
+    private static readonly IntPtr TD_INFORMATION_ICON = new(65533);
+
+    // Field order matches commctrl.h exactly; Pack=1 gives the byte-packed layout the API expects.
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    private struct TASKDIALOGCONFIG
+    {
+        public uint   cbSize;
+        public IntPtr hwndParent;
+        public IntPtr hInstance;
+        public uint   dwFlags;
+        public uint   dwCommonButtons;
+        public IntPtr pszWindowTitle;
+        public IntPtr hMainIcon;
+        public IntPtr pszMainInstruction;
+        public IntPtr pszContent;
+        public uint   cButtons;
+        public IntPtr pButtons;
+        public int    nDefaultButton;
+        public uint   cRadioButtons;
+        public IntPtr pRadioButtons;
+        public int    nDefaultRadioButton;
+        public IntPtr pszVerificationText;
+        public IntPtr pszExpandedInformation;
+        public IntPtr pszExpandedControlText;
+        public IntPtr pszCollapsedControlText;
+        public IntPtr hFooterIcon;
+        public IntPtr pszFooter;
+        public IntPtr pfCallback;
+        public IntPtr lpCallbackData;
+        public uint   cxWidth;
+    }
+
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    private struct TASKDIALOG_BUTTON
+    {
+        public int    nButtonID;
+        public IntPtr pszButtonText;
+    }
+
+    /// <summary>x64 marshalled size of TASKDIALOGCONFIG (must be 160).</summary>
+    internal static int TaskDialogConfigSize => Marshal.SizeOf<TASKDIALOGCONFIG>();
+    /// <summary>x64 marshalled size of TASKDIALOG_BUTTON (must be 12).</summary>
+    internal static int TaskDialogButtonSize => Marshal.SizeOf<TASKDIALOG_BUTTON>();
+
+    [DllImport("comctl32.dll", CharSet = CharSet.Unicode, SetLastError = false)]
+    private static extern int TaskDialogIndirect(
+        ref TASKDIALOGCONFIG pTaskConfig,
+        out int              pnButton,
+        IntPtr               pnRadioButton,
+        IntPtr               pfVerificationFlagChecked);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    /// <summary>
+    /// Shows the "update available" Task Dialog with up to three buttons
+    /// (Update / Releases page / Cancel) and an expandable release-notes section.
+    /// Blocks until the user responds. Safe to call from any thread.
+    /// </summary>
+    /// <param name="canDownload">
+    /// When <c>true</c> an "Update" button is shown; when <c>false</c> only
+    /// "Releases page" is shown (no direct download URL found in release assets).
+    /// </param>
+    internal static UpdateAction ShowUpdateDialog(
+        string latestVersion, string runningVersion,
+        string releaseNotes,  string appName,
+        bool   canDownload,   IntPtr hwndParent = default)
+    {
+        if (hwndParent == IntPtr.Zero)
+            hwndParent = GetForegroundWindow();
+
+        var strings = new List<IntPtr>(12);
+        IntPtr Str(string? s)
+        {
+            if (s is null) return IntPtr.Zero;
+            var p = Marshal.StringToHGlobalUni(s);
+            strings.Add(p);
+            return p;
+        }
+
+        const int BtnUpdate   = 100;
+        const int BtnReleases = 101;
+        int   btnCount = canDownload ? 2 : 1;
+        int   btnSize  = Marshal.SizeOf<TASKDIALOG_BUTTON>();
+        var   pButtons = Marshal.AllocHGlobal(btnSize * btnCount);
+        try
+        {
+            if (canDownload)
+            {
+                Marshal.StructureToPtr(
+                    new TASKDIALOG_BUTTON { nButtonID = BtnUpdate,   pszButtonText = Str("Update") },
+                    pButtons, false);
+                Marshal.StructureToPtr(
+                    new TASKDIALOG_BUTTON { nButtonID = BtnReleases, pszButtonText = Str("Releases page") },
+                    IntPtr.Add(pButtons, btnSize), false);
+            }
+            else
+            {
+                Marshal.StructureToPtr(
+                    new TASKDIALOG_BUTTON { nButtonID = BtnReleases, pszButtonText = Str("Releases page") },
+                    pButtons, false);
+            }
+
+            var hasNotes = !string.IsNullOrWhiteSpace(releaseNotes);
+            var config   = new TASKDIALOGCONFIG
+            {
+                cbSize                  = (uint)Marshal.SizeOf<TASKDIALOGCONFIG>(),
+                hwndParent              = hwndParent,
+                dwFlags                 = TDF_ALLOW_DIALOG_CANCELLATION | TDF_SIZE_TO_CONTENT,
+                dwCommonButtons         = TDCBF_CANCEL_BUTTON,
+                pszWindowTitle          = Str(appName),
+                hMainIcon               = TD_INFORMATION_ICON,
+                pszMainInstruction      = Str($"Version {latestVersion} is available"),
+                pszContent              = Str($"You are running version {runningVersion}."),
+                cButtons                = (uint)btnCount,
+                pButtons                = pButtons,
+                nDefaultButton          = canDownload ? BtnUpdate : BtnReleases,
+                pszExpandedInformation  = Str(hasNotes ? releaseNotes : "No release notes provided."),
+                pszCollapsedControlText = Str("Show release notes"),
+                pszExpandedControlText  = Str("Hide release notes"),
+            };
+
+            int hr = TaskDialogIndirect(ref config, out int nButton, IntPtr.Zero, IntPtr.Zero);
+            if (hr != 0)
+            {
+                // Degrade gracefully: plain MessageBox still lets the user reach the download.
+                var pick = MessageBoxW(hwndParent,
+                    $"Version {latestVersion} is available (you have {runningVersion}).\n\n" +
+                    "Open the releases page to download it?",
+                    appName, MB_YESNO | MB_ICONINFORMATION | MB_TOPMOST);
+                return pick == IDYES ? UpdateAction.ShowReleases : UpdateAction.Cancel;
+            }
+
+            return nButton switch
+            {
+                BtnUpdate   => UpdateAction.Update,
+                BtnReleases => UpdateAction.ShowReleases,
+                _           => UpdateAction.Cancel,
+            };
+        }
+        finally
+        {
+            foreach (var p in strings) Marshal.FreeHGlobal(p);
+            Marshal.FreeHGlobal(pButtons);
+        }
+    }
+
     // ── Common file dialogs (comdlg32) ─────────────────────────────────────────
     // The app is requireAdministrator (elevated). The WinRT FileOpenPicker/FileSavePicker
     // are unreliable in elevated processes, so settings Export/Import use the classic Win32

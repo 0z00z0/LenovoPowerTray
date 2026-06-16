@@ -114,10 +114,7 @@ internal sealed class TrayMenu
         _updateItem = new MenuFlyoutItem
         {
             Text    = $"⬆  Update available: v{version}",
-            Command = new RelayCommand(() =>
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
-                    "https://github.com/0z00z0/LenovoPowerTray/releases/latest")
-                { UseShellExecute = true })),
+            Command = new RelayCommand(() => _ = CheckForUpdatesAsync()),
         };
 
         // Insert before the first toggle item so it's always at the top.
@@ -339,11 +336,30 @@ internal sealed class TrayMenu
         switch (outcome.Status)
         {
             case UpdateCheckService.UpdateStatus.Available:
-                if (NativeMethods.Confirm(
-                        $"A new version is available: v{outcome.LatestVersion}\n" +
-                        $"You have v{running}.\n\nOpen the releases page?",
-                        AppName))
+                var action = NativeMethods.ShowUpdateDialog(
+                    outcome.LatestVersion!, running,
+                    outcome.ReleaseNotes ?? "", AppName,
+                    canDownload: outcome.InstallerUrl is not null);
+
+                if (action == NativeMethods.UpdateAction.Update)
+                {
+                    try
+                    {
+                        var path = await Task.Run(() =>
+                            UpdateCheckService.DownloadInstallerAsync(outcome.InstallerUrl!))
+                            .ConfigureAwait(false);
+                        Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+                    }
+                    catch
+                    {
+                        NativeMethods.Warn("Download failed.\nOpening the releases page instead.", AppName);
+                        Process.Start(new ProcessStartInfo(outcome.ReleaseUrl) { UseShellExecute = true });
+                    }
+                }
+                else if (action == NativeMethods.UpdateAction.ShowReleases)
+                {
                     Process.Start(new ProcessStartInfo(outcome.ReleaseUrl) { UseShellExecute = true });
+                }
                 break;
 
             case UpdateCheckService.UpdateStatus.UpToDate:
