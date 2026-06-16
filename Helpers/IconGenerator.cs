@@ -33,7 +33,7 @@ internal static class IconGenerator
     /// </summary>
     // Version stamp baked into the filename so an in-place app update regenerates the icon
     // automatically rather than serving the stale cached file from a previous version.
-    private const string IconVersion = "v2";
+    private const string IconVersion = "v3";
 
     internal static string GenerateAndSaveTrayIcon(string outputDirectory)
     {
@@ -177,8 +177,9 @@ internal static class IconGenerator
     /// <summary>
     /// Renders a 32×32 battery arc icon.
     /// Arc geometry: 100×100 virtual canvas mapped to <paramref name="size"/> px,
-    /// centre 50/50, radius 38, 7-o'clock start (135°), 270° sweep — same proportions
+    /// centre 50/50, radius 33, 7-o'clock start (135°), 270° sweep — same proportions
     /// as the DashboardWindow gauge so the two visuals feel consistent.
+    /// A dark rounded-square background ensures the arc is readable on any taskbar colour.
     /// </summary>
     private static Bitmap RenderBatteryBitmap(int size, int percent, bool charging)
     {
@@ -188,17 +189,25 @@ internal static class IconGenerator
         g.PixelOffsetMode = PixelOffsetMode.HighQuality;
         g.Clear(Color.Transparent);
 
+        // Dark rounded-square background — makes the arc pop on both light and dark taskbars.
+        int margin = Math.Max(1, (int)Math.Round(size * MarginFraction));
+        var rect   = new Rectangle(margin, margin, size - margin * 2 - 1, size - margin * 2 - 1);
+        int radius = Math.Max(2, (int)Math.Round(size * CornerRadiusFraction));
+        using (var bgBrush = new SolidBrush(Color.FromArgb(255, 28, 28, 28)))
+        using (var path    = BuildRoundedRectPath(rect, radius))
+            g.FillPath(bgBrush, path);
+
         // Virtual 100×100 canvas → scale to actual icon size.
         float scale  = size / 100f;
         float cx     = 50 * scale;
         float cy     = 50 * scale;
-        float radius = 38 * scale;
-        float stroke = Math.Max(2f, 7f * scale);   // proportional stroke
+        float r      = 33 * scale;                  // slightly tighter to leave room for background
+        float stroke = Math.Max(2.5f, 7f * scale);  // proportional stroke
 
-        // Track (background ring).
-        using var trackPen = new System.Drawing.Pen(Color.FromArgb(120, 220, 220, 220), stroke);
+        // Track (empty portion of ring) — visible but subtle on the dark background.
+        using var trackPen = new System.Drawing.Pen(Color.FromArgb(255, 70, 70, 70), stroke);
         trackPen.StartCap = trackPen.EndCap = System.Drawing.Drawing2D.LineCap.Round;
-        DrawArc(g, trackPen, cx, cy, radius, 135f, 270f);
+        DrawArc(g, trackPen, cx, cy, r, 135f, 270f);
 
         if (percent > 0)
         {
@@ -209,16 +218,13 @@ internal static class IconGenerator
                 > 20 => Color.FromArgb(255, 0xFF, 0xA5, 0x20),  // orange
                 _    => Color.FromArgb(255, 0xE2, 0x00, 0x1A),  // red
             };
-            if (charging) fillColor = Color.FromArgb(255, 0x22, 0xD3, 0x9A); // always green when charging
+            if (charging) fillColor = Color.FromArgb(255, 0x22, 0xD3, 0x9A);
 
             using var fillPen = new System.Drawing.Pen(fillColor, stroke);
             fillPen.StartCap = fillPen.EndCap = System.Drawing.Drawing2D.LineCap.Round;
-            DrawArc(g, fillPen, cx, cy, radius, 135f, 270f * percent / 100f);
+            DrawArc(g, fillPen, cx, cy, r, 135f, 270f * percent / 100f);
         }
 
-        // No centre text in arc mode: at the 16 px tray size a number inside the ring is
-        // illegible. The ring itself conveys the level; users who want a readable number use
-        // the Numeric tray-icon mode (RenderNumericBitmap), which fills the icon with digits.
         return bmp;
     }
 
