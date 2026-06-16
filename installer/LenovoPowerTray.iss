@@ -153,9 +153,9 @@ begin
     // with NO extra UAC prompt (scheduled tasks bypass the consent prompt).
     Exec('schtasks.exe', '/Run /TN "' + TaskName + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode)
   else
-    // No task -> launch via the shell so requireAdministrator triggers the single UAC
-    // prompt the app needs (a [Run]/CreateProcess launch would just fail here).
-    ShellExec('open', ExpandConstant('{app}\{#AppExe}'), '', '', SW_SHOWNORMAL, ewNoWait, ResultCode);
+    // No task -> use 'runas' so the UAC consent dialog is raised to the foreground.
+    // 'open' also works but the dialog can appear behind the installer window and be missed.
+    ShellExec('runas', ExpandConstant('{app}\{#AppExe}'), '', '', SW_SHOWNORMAL, ewNoWait, ResultCode);
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
