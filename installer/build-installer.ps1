@@ -100,11 +100,15 @@ if (-not $iscc) {
 }
 
 # ── 4. Compile the installer ─────────────────────────────────────────────────
+# Remove any previous versioned setup files so the Output folder stays clean.
+Get-ChildItem (Join-Path $installerDir "Output") -Filter "LenovoPowerTray-Setup-*.exe" -ErrorAction SilentlyContinue |
+    Remove-Item -Force
+
 Write-Host "==> Compiling installer with $iscc ..." -ForegroundColor Cyan
 & $iscc "/DAppVersion=$Version" "/DPublishDir=$publishDir" $iss
 if ($LASTEXITCODE -ne 0) { throw "ISCC failed ($LASTEXITCODE)." }
 
-$setup = Join-Path $installerDir "Output\LenovoPowerTray-Setup.exe"
+$setup = Join-Path $installerDir "Output\LenovoPowerTray-Setup-$Version.exe"
 
 # ── 5. Sign the installer exe ────────────────────────────────────────────────
 # Sign before computing the SHA so the printed hash matches the distributed file.

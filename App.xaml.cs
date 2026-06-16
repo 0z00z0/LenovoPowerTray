@@ -192,6 +192,12 @@ public partial class App : Application
             // decision (Charging→Idle edge, or Idle at 100 %) and the fire-once latch.
             TravelOverrideService.OnBatteryReport(pct, report.Status);
 
+            // ── Tray tooltip ──────────────────────────────────────────────────
+            _lastRateMW         = report.ChargeRateInMilliwatts ?? 0;
+            _lastThresholdState = ChargeThresholdService.Read();
+            UpdateTooltip(pct, report.RemainingCapacityInMilliwattHours,
+                               report.FullChargeCapacityInMilliwattHours);
+
             // ── Toast: AC connected ───────────────────────────────────────────
             if (_lastBatteryStatus == BatteryStatus.Discharging &&
                 report.Status      == BatteryStatus.Charging)
@@ -209,6 +215,14 @@ public partial class App : Application
 
     private System.Drawing.Icon? _currentBatteryIcon;
     private Microsoft.UI.Dispatching.DispatcherQueue? _dispatcher;
+
+    // Tooltip state — rebuilt on every battery tick and pushed to the tray icon.
+    private string  _lastTooltip             = "";
+    private string? _updateAvailableVersion;
+    private int     _lastRateMW;   // milliwatts; positive = charging, negative = draining
+    private ChargeThresholdState? _lastThresholdState;
+    private static readonly string _appVersion =
+        System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "?";
 
     private void UpdateTrayIcon(int pct, bool charging)
     {
@@ -248,6 +262,61 @@ public partial class App : Application
             UpdateTrayIcon(_lastIconState.Pct, _lastIconState.Charging);
     }
 
+    private void UpdateTooltip(int pct, int? remainingMwh, int? fullMwh)
+    {
+        var lines = new System.Text.StringBuilder();
+
+        // Line 1: percentage + power rate
+        lines.Append($"{pct}%");
+        if (_lastRateMW != 0)
+        {
+            double w = _lastRateMW / 1000.0;
+            lines.Append(w > 0 ? $"  ·  +{w:F0} W" : $"  ·  {w:F0} W");
+        }
+
+        // Line 2: time estimate (mirrors DashboardWindow.ComputeTimeRemaining logic)
+        if (Math.Abs(_lastRateMW) >= 100 && remainingMwh is { } rem && fullMwh is > 0 and { } full)
+        {
+            double h = _lastRateMW < 0
+                ? rem        / (double)Math.Abs(_lastRateMW)
+                : (full-rem) / (double)_lastRateMW;
+            if (h > 0 && h < 99)
+            {
+                var ts    = TimeSpan.FromHours(h);
+                var tstr  = ts.TotalHours >= 1 ? $"~{(int)ts.TotalHours}h {ts.Minutes:D2}m" : $"~{ts.Minutes}m";
+                var label = _lastRateMW < 0 ? "remaining" : "to full";
+                lines.Append($"\n{tstr} {label}");
+            }
+        }
+
+        // Line 3: Smart Charge limits or travel override
+        if (TravelOverrideService.IsActive)
+        {
+            lines.Append("\n⚡ Charging to 100%");
+        }
+        else if (_lastThresholdState is { Enabled: true, Start: > 0, Stop: > 0 } sc)
+        {
+            lines.Append($"\nSmart Charge: {sc.Start}–{sc.Stop}%");
+        }
+
+        // Line 4: update available (if pending)
+        if (_updateAvailableVersion is { } uv)
+            lines.Append($"\n⬆ Update available: v{uv}");
+
+        // Last line: app version
+        lines.Append($"\nLenovo Power Tray  v{_appVersion}");
+
+        var tooltip = lines.ToString();
+        if (tooltip == _lastTooltip) return;
+        _lastTooltip = tooltip;
+
+        _dispatcher?.TryEnqueue(() =>
+        {
+            if (_trayIcon is not null)
+                _trayIcon.ToolTipText = tooltip;
+        });
+    }
+
     // ── Update check ──────────────────────────────────────────────────────────
 
     private void ScheduleUpdateCheck()
@@ -260,13 +329,10 @@ public partial class App : Application
             await Task.Delay(TimeSpan.FromSeconds(30)).ConfigureAwait(false);
             await UpdateCheckService.CheckAsync(version =>
             {
-                // Marshal to UI thread to update the tray tooltip / menu.
-                _trayIcon?.DispatcherQueue.TryEnqueue(() =>
-                {
-                    if (_trayIcon is not null)
-                        _trayIcon.ToolTipText = $"Lenovo Power Tray — update available: v{version}";
-                    _menu?.SetUpdateBadge(version);
-                });
+                _updateAvailableVersion = version;
+                // Refresh tooltip to include the update notice; refresh menu badge on UI thread.
+                UpdateTooltip(_lastIconState.Pct < 0 ? 0 : _lastIconState.Pct, null, null);
+                _trayIcon?.DispatcherQueue.TryEnqueue(() => _menu?.SetUpdateBadge(version));
             }).ConfigureAwait(false);
         });
     }
