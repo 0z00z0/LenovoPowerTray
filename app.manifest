@@ -10,6 +10,21 @@
     </security>
   </trustInfo>
 
+  <!-- Required for TaskDialogIndirect (update prompt). Without this the OS loads
+       comctl32.dll v5 which does not export TaskDialogIndirect, causing an
+       EntryPointNotFoundException at runtime and silently doing nothing. -->
+  <dependency>
+    <dependentAssembly>
+      <assemblyIdentity
+        type="win32"
+        name="Microsoft.Windows.Common-Controls"
+        version="6.0.0.0"
+        processorArchitecture="amd64"
+        publicKeyToken="6595b64144ccf1df"
+        language="*" />
+    </dependentAssembly>
+  </dependency>
+
   <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
     <application>
       <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}" />
