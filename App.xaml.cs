@@ -266,15 +266,20 @@ public partial class App : Application
     {
         var lines = new System.Text.StringBuilder();
 
-        // Line 1: percentage + power rate
-        lines.Append($"{pct}%");
+        // ⚡ Lenovo Power Tray  v1.0.x
+        lines.Append($"⚡ Lenovo Power Tray  v{_appVersion}");
+
+        // ⚡ 75%  ·  +45 W   (charging)
+        // 🔋 75%  ·  −18 W   (discharging / idle)
+        string chargeIcon = _lastRateMW >= 100 ? "⚡" : "🔋";
+        lines.Append($"\n{chargeIcon} {pct}%");
         if (_lastRateMW != 0)
         {
             double w = _lastRateMW / 1000.0;
             lines.Append(w > 0 ? $"  ·  +{w:F0} W" : $"  ·  {w:F0} W");
         }
 
-        // Line 2: time estimate (mirrors DashboardWindow.ComputeTimeRemaining logic)
+        // ⏱ ~2h 15m remaining  /  ⏱ ~45m to full
         if (Math.Abs(_lastRateMW) >= 100 && remainingMwh is { } rem && fullMwh is > 0 and { } full)
         {
             double h = _lastRateMW < 0
@@ -285,26 +290,19 @@ public partial class App : Application
                 var ts    = TimeSpan.FromHours(h);
                 var tstr  = ts.TotalHours >= 1 ? $"~{(int)ts.TotalHours}h {ts.Minutes:D2}m" : $"~{ts.Minutes}m";
                 var label = _lastRateMW < 0 ? "remaining" : "to full";
-                lines.Append($"\n{tstr} {label}");
+                lines.Append($"\n⏱ {tstr} {label}");
             }
         }
 
-        // Line 3: Smart Charge limits or travel override
+        // ⚡ Charging to 100%   OR   ⚙ Smart Charge: 70–80%
         if (TravelOverrideService.IsActive)
-        {
             lines.Append("\n⚡ Charging to 100%");
-        }
         else if (_lastThresholdState is { Enabled: true, Start: > 0, Stop: > 0 } sc)
-        {
-            lines.Append($"\nSmart Charge: {sc.Start}–{sc.Stop}%");
-        }
+            lines.Append($"\n⚙ Smart Charge: {sc.Start}–{sc.Stop}%");
 
-        // Line 4: update available (if pending)
+        // ⬆ Update available: vX.Y.Z
         if (_updateAvailableVersion is { } uv)
             lines.Append($"\n⬆ Update available: v{uv}");
-
-        // Last line: app version
-        lines.Append($"\nLenovo Power Tray  v{_appVersion}");
 
         var tooltip = lines.ToString();
         if (tooltip == _lastTooltip) return;
