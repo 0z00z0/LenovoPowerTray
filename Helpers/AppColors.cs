@@ -36,7 +36,12 @@ internal static class AppColors
     internal static readonly SolidColorBrush IndicatorGreyBrush   = new(Grey);
 
     // ── Arc gauge fills (by battery level) ─────────────────────────────────────
-    internal static readonly SolidColorBrush GaugeLowBrush    = new(LenovoRed);  // ≤ 20 %
-    internal static readonly SolidColorBrush GaugeMedBrush    = new(Orange);     // ≤ 50 %
-    internal static readonly SolidColorBrush GaugeHighBrush   = new(Green);      // > 50 %
+    // Brighter / more luminous than the muted semantic dot colours above so the battery
+    // ring (and the history line, which reuses these brushes) reads clearly at a glance.
+    internal static readonly Color GaugeRed   = Color.FromArgb(255, 0xFF, 0x3B, 0x30);  // bright red
+    internal static readonly Color GaugeAmber = Color.FromArgb(255, 0xFF, 0xA5, 0x1F);  // bright amber
+    internal static readonly Color GaugeGreen = Color.FromArgb(255, 0x16, 0xDD, 0x9A);  // bright green
+    internal static readonly SolidColorBrush GaugeLowBrush    = new(GaugeRed);    // ≤ 20 %
+    internal static readonly SolidColorBrush GaugeMedBrush    = new(GaugeAmber);  // ≤ 50 %
+    internal static readonly SolidColorBrush GaugeHighBrush   = new(GaugeGreen);  // > 50 %
 }

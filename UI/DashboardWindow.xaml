@@ -44,13 +44,13 @@
                 <Canvas Width="100" Height="100">
                     <Path x:Name="GaugeTrack"
                           Stroke="{ThemeResource ControlStrokeColorDefaultBrush}"
-                          StrokeThickness="8"
+                          StrokeThickness="10"
                           StrokeStartLineCap="Round"
                           StrokeEndLineCap="Round"
                           Canvas.Left="0" Canvas.Top="0"/>
                     <Path x:Name="GaugeFill"
-                          Stroke="#E2001A"
-                          StrokeThickness="8"
+                          Stroke="#FF3B30"
+                          StrokeThickness="10"
                           StrokeStartLineCap="Round"
                           StrokeEndLineCap="Round"
                           Canvas.Left="0" Canvas.Top="0"/>
@@ -99,17 +99,6 @@
                                Foreground="{ThemeResource TextFillColorTertiaryBrush}"
                                CharacterSpacing="100"/>
                     <TextBlock x:Name="PowerSourceText"
-                               Text="—"
-                               FontSize="13"
-                               Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
-                </StackPanel>
-                <StackPanel Spacing="2">
-                    <TextBlock Text="RATE"
-                               FontSize="10"
-                               FontWeight="SemiBold"
-                               Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                               CharacterSpacing="100"/>
-                    <TextBlock x:Name="PowerRateText"
                                Text="—"
                                FontSize="13"
                                Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>

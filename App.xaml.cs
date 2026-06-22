@@ -117,8 +117,22 @@ public partial class App : Application
     private void SubscribeBatteryEvents()
     {
         Battery.AggregateBattery.ReportUpdated += OnBatteryReportUpdated;
+        Microsoft.Win32.SystemEvents.PowerModeChanged += OnPowerModeChanged;
         // Trigger immediately with the current state so the icon is right from the start.
         OnBatteryReportUpdated(Battery.AggregateBattery, null!);
+    }
+
+    private void OnPowerModeChanged(object? sender, Microsoft.Win32.PowerModeChangedEventArgs e)
+    {
+        if (e.Mode != Microsoft.Win32.PowerModes.Resume) return;
+        // The notification area is rebuilt after system resume; re-register the icon so it
+        // reappears even if the shell didn't restore it automatically.
+        _dispatcher?.TryEnqueue(() =>
+        {
+            try { _trayIcon?.ForceCreate(); }
+            catch { }
+            ForceIconRefresh();
+        });
     }
 
     private void OnBatteryReportUpdated(Battery sender, object args)
@@ -193,6 +207,7 @@ public partial class App : Application
             TravelOverrideService.OnBatteryReport(pct, report.Status);
 
             // ── Tray tooltip ──────────────────────────────────────────────────
+            _lastOnAC           = report.Status is BatteryStatus.Charging or BatteryStatus.Idle;
             _lastRateMW         = report.ChargeRateInMilliwatts ?? 0;
             _lastThresholdState = ChargeThresholdService.Read();
             UpdateTooltip(pct, report.RemainingCapacityInMilliwattHours,
@@ -220,6 +235,7 @@ public partial class App : Application
     private string  _lastTooltip             = "";
     private string? _updateAvailableVersion;
     private int     _lastRateMW;   // milliwatts; positive = charging, negative = draining
+    private bool    _lastOnAC;
     private ChargeThresholdState? _lastThresholdState;
     private static readonly string _appVersion =
         System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "?";
@@ -272,7 +288,9 @@ public partial class App : Application
         // ⚡ 75%  ·  +45 W   (charging)
         // 🔋 75%  ·  −18 W   (discharging / idle)
         string chargeIcon = _lastRateMW >= 100 ? "⚡" : "🔋";
-        lines.Append($"\n{chargeIcon} {pct}%");
+        lines.Append(_lastOnAC
+            ? $"\n{chargeIcon} AC · {pct}%"
+            : $"\n{chargeIcon} {pct}%");
         if (_lastRateMW != 0)
         {
             double w = _lastRateMW / 1000.0;
@@ -373,6 +391,7 @@ public partial class App : Application
     private void Shutdown()
     {
         Battery.AggregateBattery.ReportUpdated -= OnBatteryReportUpdated;
+        Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPowerModeChanged;
         _currentBatteryIcon?.Dispose();
         ToastService.Cleanup();
         _trayIcon?.Dispose();
