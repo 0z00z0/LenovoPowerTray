@@ -219,13 +219,12 @@ public sealed partial class DashboardWindow : Window
 
             // Idle and Charging both indicate AC is connected.
             bool onAC = report.Status is BatteryStatus.Charging or BatteryStatus.Idle;
-            int mw = report.ChargeRateInMilliwatts ?? 0;
-            PowerSourceText.Text = (onAC, mw) switch {
-                (true,  > 0) => $"AC Power  ·  +{mw / 1000.0:F0} W",
-                (false, < 0) => $"Battery  ·  −{-mw / 1000.0:F0} W",
-                (true,  _)   => "AC Power",
-                _            => "Battery",
-            };
+            int  mw   = report.ChargeRateInMilliwatts ?? 0;
+            // Append the rate only in its expected direction (charging on AC, draining on battery);
+            // PowerFormat shows mW below 1 W so a small draw never reads as "0 W".
+            string label = onAC ? "AC Power" : "Battery";
+            string? rate = (onAC && mw > 0) || (!onAC && mw < 0) ? PowerFormat.SignedRate(mw) : null;
+            PowerSourceText.Text = rate is null ? label : $"{label}  ·  {rate}";
 
             SetStatusGlyph(report.Status);
 

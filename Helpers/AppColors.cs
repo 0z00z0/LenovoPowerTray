@@ -9,9 +9,6 @@ namespace LenovoTray.Helpers;
 /// </summary>
 internal static class AppColors
 {
-    // ── Brand ──────────────────────────────────────────────────────────────────
-    internal static readonly Color LenovoRed   = Color.FromArgb(255, 0xE2, 0x00, 0x1A);
-
     // ── Semantic state ─────────────────────────────────────────────────────────
     internal static readonly Color Green       = Color.FromArgb(255, 0x10, 0xB9, 0x81);
     internal static readonly Color Orange      = Color.FromArgb(255, 0xFF, 0x8C, 0x00);

@@ -125,13 +125,26 @@ public partial class App : Application
     private void OnPowerModeChanged(object? sender, Microsoft.Win32.PowerModeChangedEventArgs e)
     {
         if (e.Mode != Microsoft.Win32.PowerModes.Resume) return;
-        // The notification area is rebuilt after system resume; re-register the icon so it
-        // reappears even if the shell didn't restore it automatically.
+        // On resume the shell sometimes drops the tray icon WITHOUT broadcasting TaskbarCreated,
+        // so H.NotifyIcon's built-in recovery never fires. A plain ForceCreate() can't help here:
+        // its Create() early-returns while the library still believes the icon exists. Force a real
+        // re-add by removing the stale registration first, then creating — the same TryRemove()+
+        // Create() pair the library itself uses to recover from TaskbarCreated.
         _dispatcher?.TryEnqueue(() =>
         {
-            try { _trayIcon?.ForceCreate(); }
-            catch { }
-            ForceIconRefresh();
+            try
+            {
+                if (_trayIcon is { } icon)
+                {
+                    icon.TrayIcon.TryRemove();
+                    icon.TrayIcon.Create();
+                }
+            }
+            catch (Exception ex)
+            {
+                LogCrash("OnPowerModeChanged", ex);
+            }
+            ForceIconRefresh();   // repaint the battery arc onto the (re)created icon
         });
     }
 
@@ -207,7 +220,7 @@ public partial class App : Application
             TravelOverrideService.OnBatteryReport(pct, report.Status);
 
             // ── Tray tooltip ──────────────────────────────────────────────────
-            _lastOnAC           = report.Status is BatteryStatus.Charging or BatteryStatus.Idle;
+            _lastOnAC           = charging;   // Charging or Idle ⇒ on AC (same expression as the icon)
             _lastRateMW         = report.ChargeRateInMilliwatts ?? 0;
             _lastThresholdState = ChargeThresholdService.Read();
             UpdateTooltip(pct, report.RemainingCapacityInMilliwattHours,
@@ -285,17 +298,19 @@ public partial class App : Application
         // ⚡ Lenovo Power Tray  v1.0.x
         lines.Append($"⚡ Lenovo Power Tray  v{_appVersion}");
 
-        // ⚡ 75%  ·  +45 W   (charging)
-        // 🔋 75%  ·  −18 W   (discharging / idle)
-        string chargeIcon = _lastRateMW >= 100 ? "⚡" : "🔋";
+        // ⚡ AC · 75%  ·  +45 W   (on AC)
+        // 🔋 75%  ·  −18 W        (on battery)
+        // Glyph follows the power source so it never contradicts the AC label, and the rate is
+        // shown only in its expected direction via the shared formatter (mW below 1 W, real −).
+        string chargeIcon = _lastOnAC ? "⚡" : "🔋";
         lines.Append(_lastOnAC
             ? $"\n{chargeIcon} AC · {pct}%"
             : $"\n{chargeIcon} {pct}%");
-        if (_lastRateMW != 0)
-        {
-            double w = _lastRateMW / 1000.0;
-            lines.Append(w > 0 ? $"  ·  +{w:F0} W" : $"  ·  {w:F0} W");
-        }
+        string? rate = (_lastOnAC && _lastRateMW > 0) || (!_lastOnAC && _lastRateMW < 0)
+            ? PowerFormat.SignedRate(_lastRateMW)
+            : null;
+        if (rate is not null)
+            lines.Append($"  ·  {rate}");
 
         // ⏱ ~2h 15m remaining  /  ⏱ ~45m to full
         if (Math.Abs(_lastRateMW) >= 100 && remainingMwh is { } rem && fullMwh is > 0 and { } full)
@@ -323,6 +338,17 @@ public partial class App : Application
             lines.Append($"\n⬆ Update available: v{uv}");
 
         var tooltip = lines.ToString();
+
+        // NOTIFYICONDATA.szTip holds at most 127 UTF-16 chars (+ NUL); clamp so the shell doesn't
+        // silently truncate. Don't split a surrogate pair (the emoji glyphs are 2 code units each).
+        const int MaxTipLength = 127;
+        if (tooltip.Length > MaxTipLength)
+        {
+            int cut = MaxTipLength - 1;                       // leave room for the ellipsis
+            if (char.IsHighSurrogate(tooltip[cut - 1])) cut--;
+            tooltip = string.Concat(tooltip.AsSpan(0, cut), "…");
+        }
+
         if (tooltip == _lastTooltip) return;
         _lastTooltip = tooltip;
 
