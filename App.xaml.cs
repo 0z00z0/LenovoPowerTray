@@ -320,11 +320,11 @@ public partial class App : Application
         // ⚡ Lenovo Power Tray  v1.0.x
         lines.Append($"⚡ Lenovo Power Tray  v{_appVersion}");
 
-        // ⚡ AC · 75%  ·  +45 W   (on AC)
+        // 🔌 AC · 75%  ·  +45 W   (on AC — a plug, distinct from the ⚡ brand mark on the title line)
         // 🔋 75%  ·  −18 W        (on battery)
         // Glyph follows the power source so it never contradicts the AC label, and the rate is
         // shown only in its expected direction via the shared formatter (mW below 1 W, real −).
-        string chargeIcon = _lastOnAC ? "⚡" : "🔋";
+        string chargeIcon = _lastOnAC ? "🔌" : "🔋";
         lines.Append(_lastOnAC
             ? $"\n{chargeIcon} AC · {pct}%"
             : $"\n{chargeIcon} {pct}%");
@@ -349,9 +349,9 @@ public partial class App : Application
             }
         }
 
-        // ⚡ Charging to 100%   OR   ⚙ Smart Charge: 70–80%
+        // 🔝 Charging to 100%   OR   ⚙ Smart Charge: 70–80%
         if (TravelOverrideService.IsActive)
-            lines.Append("\n⚡ Charging to 100%");
+            lines.Append("\n🔝 Charging to 100%");
         else if (_lastThresholdState is { Enabled: true, Start: > 0, Stop: > 0 } sc)
             lines.Append($"\n⚙ Smart Charge: {sc.Start}–{sc.Stop}%");
 
